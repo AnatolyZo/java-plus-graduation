@@ -2,11 +2,13 @@ package ru.practicum.explorewithme;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.retry.support.RetryTemplate;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.DefaultUriBuilderFactory;
 import org.springframework.web.util.UriComponentsBuilder;
 import ru.practicum.explorewithme.hit.EndpointHitRequest;
 import ru.practicum.explorewithme.stats.ViewStatsResponse;
@@ -20,7 +22,9 @@ import java.util.List;
 @Slf4j
 public class StatsClient {
     private final RestTemplate restTemplate;
-    private final String serverUrl;
+    private final DiscoveryClient discoveryClient;
+    private final RetryTemplate retryTemplate;
+    private final String statsServerName;
     private static final String API_PREFIX_HIT = "/hit";
     private static final String API_PREFIX_STATS = "/stats";
     private static final String PARAM_START = "start";
@@ -30,16 +34,20 @@ public class StatsClient {
     private static final DateTimeFormatter DATE_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    public StatsClient(String serverUrl, RestTemplateBuilder builder) {
-        this.serverUrl = serverUrl.endsWith("/") ? serverUrl.substring(0, serverUrl.length() - 1) : serverUrl;
-        this.restTemplate = builder
-                .uriTemplateHandler(new DefaultUriBuilderFactory(this.serverUrl))
-                .build();
+    public StatsClient(String statsServerName,
+                       RestTemplateBuilder builder,
+                       DiscoveryClient discoveryClient,
+                       RetryTemplate retryTemplate) {
+        this.statsServerName = statsServerName;
+        this.restTemplate = builder.build();
+        this.discoveryClient = discoveryClient;
+        this.retryTemplate = retryTemplate;
     }
 
     public void addStatistics(EndpointHitRequest endpointHitRequest) {
         log.trace("Отправлен запрос на добавление статистических данных {}", endpointHitRequest);
-        restTemplate.postForEntity(API_PREFIX_HIT, endpointHitRequest, Void.class);
+        String statsServerUri = makeUri().toString();
+        restTemplate.postForEntity(statsServerUri + API_PREFIX_HIT, endpointHitRequest, Void.class);
     }
 
     public List<ViewStatsResponse> getStatistics(LocalDateTime start,
@@ -50,7 +58,7 @@ public class StatsClient {
                 start, end, uris, unique);
 
         UriComponentsBuilder builder = UriComponentsBuilder
-                .fromUriString(serverUrl)
+                .fromUriString(makeUri().toString())
                 .path(API_PREFIX_STATS)
                 .queryParam(PARAM_START, DATE_TIME_FORMATTER.format(start))
                 .queryParam(PARAM_END, DATE_TIME_FORMATTER.format(end));
@@ -71,5 +79,23 @@ public class StatsClient {
         );
         List<ViewStatsResponse> body = response.getBody();
         return body != null ? body : Collections.emptyList();
+    }
+
+    private ServiceInstance getInstance() {
+        try {
+            return discoveryClient
+                    .getInstances(statsServerName)
+                    .getFirst();
+        } catch (Exception exception) {
+            throw new StatsServerUnavailable(
+                    "Ошибка обнаружения адреса сервиса статистики с id: " + statsServerName,
+                    exception
+            );
+        }
+    }
+
+    private URI makeUri() {
+        ServiceInstance instance = retryTemplate.execute(cxt -> getInstance());
+        return URI.create("http://" + instance.getHost() + ":" + instance.getPort());
     }
 }
