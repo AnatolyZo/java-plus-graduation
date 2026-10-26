@@ -1,6 +1,5 @@
 package ru.practicum.explorewithme.config;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.cloud.client.discovery.DiscoveryClient;
@@ -11,8 +10,6 @@ import ru.practicum.explorewithme.StatsClient;
 
 @Configuration
 public class StatsClientConfig {
-    @Autowired
-    private RetryTemplate retryTemplate;
 
     @Bean
     public StatsClient statsClient(@Value("${stats.server.name}") String statsServerName,

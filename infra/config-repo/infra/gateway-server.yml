@@ -29,7 +29,7 @@ spring:
         - id: main-service-read
           uri: lb://main-service
           predicates:
-            - Path=/admin/**,/private/**,/categories/**,/comments/**,/compilations/**,/events/**,/users/**
+            - Path=/admin/**,/categories/**,/comments/**,/compilations/**,/events/**,/users/**
             - Method=GET
           filters:
             - name: Retry
@@ -48,7 +48,7 @@ spring:
         - id: main-service
           uri: lb://main-service
           predicates:
-            - Path=/admin/**,/private/**,/categories/**,/comments/**,/compilations/**,/events/**,/users/**
+            - Path=/admin/**,/categories/**,/comments/**,/compilations/**,/events/**,/users/**
 
 server:
   port: 8080
