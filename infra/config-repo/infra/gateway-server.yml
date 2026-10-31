@@ -26,10 +26,10 @@ spring:
         locator:
           enabled: false
       routes:
-        - id: main-service-read
-          uri: lb://main-service
+        - id: comment-service-read
+          uri: lb://comment-service
           predicates:
-            - Path=/admin/**,/categories/**,/comments/**,/compilations/**,/events/**,/users/**
+            - Path=/admin/comments/**,/users/{userId}/comments/**,/events/{eventId}/comments/**
             - Method=GET
           filters:
             - name: Retry
@@ -45,10 +45,106 @@ spring:
                   firstBackoff: 100ms
                   maxBackoff: 500ms
 
-        - id: main-service
-          uri: lb://main-service
+        - id: comment-service
+          uri: lb://comment-service
           predicates:
-            - Path=/admin/**,/categories/**,/comments/**,/compilations/**,/events/**,/users/**
+            - Path=/admin/comments/**,/users/{userId}/comments/**,/users/{userId}/events/{eventId}/comments
+
+        - id: compilation-service-read
+          uri: lb://compilation-service
+          predicates:
+            - Path=/compilations/**
+            - Method=GET
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                methods:
+                  - GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+
+        - id: compilation-service
+          uri: lb://compilation-service
+          predicates:
+            - Path=/admin/compilations/**
+
+        - id: event-service-read
+          uri: lb://event-service
+          predicates:
+            - Path=/admin/events/**,/users/{userId}/events,/users/{userId}/events/{eventId},/events/**,/categories/**
+            - Method=GET
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                methods:
+                  - GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+
+        - id: event-service
+          uri: lb://event-service
+          predicates:
+            - Path=/admin/events/**,/admin/categories/**,/users/{userId}/events,/users/{userId}/events/{eventId}
+
+        - id: request-service-read
+          uri: lb://request-service
+          predicates:
+            - Path=/users/{userId}/requests,/users/{userId}/events/{eventId}/requests
+            - Method=GET
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                methods:
+                  - GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+
+        - id: request-service
+          uri: lb://request-service
+          predicates:
+            - Path=/users/{userId}/requests/**,/users/{userId}/events/{eventId}/requests
+
+        - id: user-service-read
+          uri: lb://user-service
+          predicates:
+            - Path=/admin/users/**
+            - Method=GET
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                methods:
+                  - GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/admin/users/**
 
 server:
   port: 8080
