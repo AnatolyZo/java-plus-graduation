@@ -6,7 +6,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.practicum.common.Entities;
-import ru.practicum.feign.result.RemoteCallResult;
 import ru.practicum.request.dto.ChangedRequestStatusesDto;
 import ru.practicum.request.dto.RequestDto;
 import ru.practicum.request.dto.RequestStatus;
@@ -18,6 +17,7 @@ import ru.practicum.request.exception.UnavailableUpdateException;
 import ru.practicum.request.feign.*;
 import ru.practicum.request.repository.RequestRepository;
 import ru.practicum.request.service.RequestServiceImpl;
+import ru.practicum.request.service.support.FetchService;
 import ru.practicum.request.service.support.RequestCheckService;
 
 import java.time.LocalDateTime;
@@ -37,7 +37,7 @@ public class RequestServiceImplTest {
     private RequestRepository requestRepository;
 
     @Mock
-    private EventFetchClientAdapter eventFetchClientAdapter;
+    private FetchService fetchService;
 
     @Mock
     private RequestCheckService requestCheckService;
@@ -61,21 +61,21 @@ public class RequestServiceImplTest {
         savedRequest.setRequesterId(USER_ID);
         savedRequest.setStatus(RequestStatus.CONFIRMED);
 
-        when(eventFetchClientAdapter.getEventById(anyLong())).thenReturn(new RemoteCallResult.Success<>(event));
+        when(fetchService.getEventById(anyLong())).thenReturn(event);
         when(requestRepository.existsByEventIdAndRequesterId(anyLong(), anyLong())).thenReturn(false);
-        doNothing().when(requestCheckService).checkUserExistence(USER_ID);
+        when(requestCheckService.checkUserExistence(USER_ID)).thenReturn(USER_ID);
         when(requestRepository.save(any(Request.class))).thenReturn(savedRequest);
-        when(eventFetchClientAdapter.updateConfirmedRequests(anyLong(), any(ConfirmedRequestsUpdate.class))).thenReturn(new RemoteCallResult.Success<>(createdEvent));
+        when(fetchService.updateConfirmedRequests(anyLong(), any(ConfirmedRequestsUpdate.class))).thenReturn(createdEvent);
 
         RequestDto dto = requestService.create(USER_ID, EVENT_ID);
 
         assertThat(dto.getId()).isEqualTo(REQUEST_ID);
         assertThat(dto.getStatus()).isEqualTo(RequestStatus.CONFIRMED);
         verify(requestRepository, times(1)).existsByEventIdAndRequesterId(EVENT_ID, USER_ID);
-        verify(eventFetchClientAdapter, times(1)).getEventById(EVENT_ID);
+        verify(fetchService, times(1)).getEventById(EVENT_ID);
         verify(requestCheckService, times(1)).checkUserExistence((USER_ID));
         verify(requestRepository, times(1)).save(any(Request.class));
-        verify(eventFetchClientAdapter, times(1)).updateConfirmedRequests(EVENT_ID, new ConfirmedRequestsUpdate(3));
+        verify(fetchService, times(1)).updateConfirmedRequests(EVENT_ID, new ConfirmedRequestsUpdate(3));
     }
 
     @Test
@@ -87,7 +87,7 @@ public class RequestServiceImplTest {
                 .hasMessageContaining(Entities.REQUEST.name());
 
         verify(requestRepository, times(1)).existsByEventIdAndRequesterId(EVENT_ID, USER_ID);
-        verify(eventFetchClientAdapter, never()).getEventById(anyLong());
+        verify(fetchService, never()).getEventById(anyLong());
         verify(requestCheckService, never()).checkUserExistence(USER_ID);
     }
 
@@ -95,7 +95,7 @@ public class RequestServiceImplTest {
     void create_unpublishedEvent_throws() {
         EventDto event = new EventDto(EVENT_ID, 0, 99L, 5, true, EventStatus.PENDING);
 
-        when(eventFetchClientAdapter.getEventById(anyLong())).thenReturn(new RemoteCallResult.Success<>(event));
+        when(fetchService.getEventById(anyLong())).thenReturn(event);
         when(requestRepository.existsByEventIdAndRequesterId(anyLong(), anyLong())).thenReturn(false);
 
         doThrow(new UnavailableUpdateException(Entities.EVENT.name(), EVENT_ID))
@@ -106,14 +106,14 @@ public class RequestServiceImplTest {
                 .isInstanceOf(UnavailableUpdateException.class);
 
         verify(requestRepository, times(1)).existsByEventIdAndRequesterId(EVENT_ID, USER_ID);
-        verify(eventFetchClientAdapter, times(1)).getEventById(EVENT_ID);
+        verify(fetchService, times(1)).getEventById(EVENT_ID);
     }
 
     @Test
     void create_eventLimitReached_throws() {
         EventDto event = new EventDto(EVENT_ID, 5, 99L, 5, true, EventStatus.PUBLISHED);
 
-        when(eventFetchClientAdapter.getEventById(anyLong())).thenReturn(new RemoteCallResult.Success<>(event));
+        when(fetchService.getEventById(anyLong())).thenReturn(event);
         when(requestRepository.existsByEventIdAndRequesterId(anyLong(), anyLong())).thenReturn(false);
 
         doThrow(new UnavailableUpdateException(Entities.EVENT.name(), EVENT_ID))
@@ -124,7 +124,7 @@ public class RequestServiceImplTest {
                 .isInstanceOf(UnavailableUpdateException.class);
 
         verify(requestRepository, times(1)).existsByEventIdAndRequesterId(EVENT_ID, USER_ID);
-        verify(eventFetchClientAdapter, times(1)).getEventById(EVENT_ID);
+        verify(fetchService, times(1)).getEventById(EVENT_ID);
     }
 
     @Test
@@ -169,7 +169,7 @@ public class RequestServiceImplTest {
         List<RequestDto> expectedRequests = List.of(requestDto);
         List<Request> requests = List.of(request);
 
-        doNothing().when(requestCheckService).checkEventExistence(anyLong(), anyLong());
+        when(requestCheckService.checkEventExistence(anyLong(), anyLong())).thenReturn(true);
         when(requestRepository.findByEventId(EVENT_ID)).thenReturn(requests);
 
         List<RequestDto> result = requestService.getRequests(USER_ID, EVENT_ID);
@@ -198,7 +198,7 @@ public class RequestServiceImplTest {
 
         UpdateRequestStatusDto update = createTestUpdateRequestStatusDto(ids, RequestStatus.CONFIRMED);
 
-        when(eventFetchClientAdapter.getEventByIdAndUserId(anyLong(), anyLong())).thenReturn(new RemoteCallResult.Success<>(event));
+        when(fetchService.getEventByIdAndUserId(anyLong(), anyLong())).thenReturn(event);
 
         Request confirmed = createTestRequest(requestId1, EVENT_ID, 1, RequestStatus.PENDING);;
         Request rejected1 = createTestRequest(requestId2, EVENT_ID, 2, RequestStatus.PENDING);
@@ -213,8 +213,8 @@ public class RequestServiceImplTest {
         when(requestRepository.findByIdIn(idsToReject)).thenReturn(requestsToReject);
 
         EventDto updatedEvent = new EventDto(EVENT_ID, 3, USER_ID, 3, true, EventStatus.PUBLISHED);
-        when(eventFetchClientAdapter.updateConfirmedRequests(anyLong(), any(ConfirmedRequestsUpdate.class)))
-                .thenReturn(new RemoteCallResult.Success<>(updatedEvent));
+        when(fetchService.updateConfirmedRequests(anyLong(), any(ConfirmedRequestsUpdate.class)))
+                .thenReturn(updatedEvent);
 
         ChangedRequestStatusesDto result = requestService.updateRequestStatuses(USER_ID, EVENT_ID, update);
 
@@ -224,7 +224,7 @@ public class RequestServiceImplTest {
 
         assertThat(result.getConfirmedRequests()).isEqualTo(List.of(expectedConfirmed));
         assertThat(result.getRejectedRequests()).isEqualTo(List.of(expectedRejected1, expectedRejected2));
-        verify(eventFetchClientAdapter, times(1)).updateConfirmedRequests(EVENT_ID, new ConfirmedRequestsUpdate(3));
+        verify(fetchService, times(1)).updateConfirmedRequests(EVENT_ID, new ConfirmedRequestsUpdate(3));
     }
 
     @Test
@@ -237,7 +237,7 @@ public class RequestServiceImplTest {
 
         UpdateRequestStatusDto update = createTestUpdateRequestStatusDto(ids, RequestStatus.CONFIRMED);
 
-        when(eventFetchClientAdapter.getEventByIdAndUserId(anyLong(), anyLong())).thenReturn(new RemoteCallResult.Success<>(event));
+        when(fetchService.getEventByIdAndUserId(anyLong(), anyLong())).thenReturn(event);
 
         assertThrows(UnavailableUpdateException.class,
                 () -> requestService.updateRequestStatuses(USER_ID, EVENT_ID, update));
@@ -259,7 +259,7 @@ public class RequestServiceImplTest {
 
         List<Request> requestsToConfirm = List.of(confirmed1, confirmed2, confirmed3);
 
-        when(eventFetchClientAdapter.getEventByIdAndUserId(anyLong(), anyLong())).thenReturn(new RemoteCallResult.Success<>(event));
+        when(fetchService.getEventByIdAndUserId(anyLong(), anyLong())).thenReturn(event);
         when(requestRepository.findByIdIn(ids)).thenReturn(requestsToConfirm);
 
         RequestDto expectedConfirmed1 = createTestRequestDto(requestId1, EVENT_ID, 1, RequestStatus.CONFIRMED);;
@@ -267,15 +267,15 @@ public class RequestServiceImplTest {
         RequestDto expectedConfirmed3 = createTestRequestDto(requestId3, EVENT_ID, 3, RequestStatus.CONFIRMED);
 
         EventDto updatedEvent = new EventDto(EVENT_ID, 3, USER_ID, 3, true, EventStatus.PUBLISHED);
-        when(eventFetchClientAdapter.updateConfirmedRequests(anyLong(), any(ConfirmedRequestsUpdate.class)))
-                .thenReturn(new RemoteCallResult.Success<>(updatedEvent));
+        when(fetchService.updateConfirmedRequests(anyLong(), any(ConfirmedRequestsUpdate.class)))
+                .thenReturn(updatedEvent);
 
         ChangedRequestStatusesDto result = requestService.updateRequestStatuses(USER_ID, EVENT_ID, update);
 
         assertThat(result.getConfirmedRequests()).isEqualTo(List.of(expectedConfirmed1, expectedConfirmed2, expectedConfirmed3));
         assertThat(result.getRejectedRequests()).isEqualTo(List.of());
 
-        verify(eventFetchClientAdapter, times(1)).updateConfirmedRequests(EVENT_ID, new ConfirmedRequestsUpdate(8));
+        verify(fetchService, times(1)).updateConfirmedRequests(EVENT_ID, new ConfirmedRequestsUpdate(8));
     }
 
     private RequestDto createTestRequestDto(long requestId, long eventId, long requesterId, RequestStatus status) {

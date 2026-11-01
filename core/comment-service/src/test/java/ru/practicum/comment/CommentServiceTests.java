@@ -18,14 +18,12 @@ import ru.practicum.comment.entity.Comment;
 import ru.practicum.comment.repository.AdminCommentSearchSpecification;
 import ru.practicum.comment.repository.CommentRepository;
 import ru.practicum.comment.service.CommentServiceImpl;
-import ru.practicum.feign.adapters.EventExistsClientAdapter;
-import ru.practicum.feign.adapters.UserExistsClientAdapter;
-import ru.practicum.feign.result.RemoteCallResult;
+import ru.practicum.comment.service.support.CommentCheckService;
+import ru.practicum.common.Entities;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -43,10 +41,7 @@ public class CommentServiceTests {
     private CommentRepository commentRepository;
 
     @Mock
-    private UserExistsClientAdapter userExistsClientAdapter;
-
-    @Mock
-    private EventExistsClientAdapter eventExistsClientAdapter;
+    private CommentCheckService commentCheckService;
 
     private static final long ADMIN_ID = 1L;
     private static final long COMMENT_ID = 2L;
@@ -135,8 +130,7 @@ public class CommentServiceTests {
                 .status(CommentStatus.PENDING) // или любой другой, не важно
                 .build();
 
-        Set<Long> existingUsers = Set.of(ADMIN_ID);
-        when(userExistsClientAdapter.checkExists(List.of(ADMIN_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
+        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(ADMIN_ID);
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
 
         CommentDto dto = commentService.moderateComment(ADMIN_ID, COMMENT_ID, ModerationAction.APPROVE);
@@ -166,8 +160,7 @@ public class CommentServiceTests {
                 .status(CommentStatus.PENDING)
                 .build();
 
-        Set<Long> existingUsers = Set.of(ADMIN_ID);
-        when(userExistsClientAdapter.checkExists(List.of(ADMIN_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
+        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(ADMIN_ID);
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
 
         CommentDto dto = commentService.moderateComment(ADMIN_ID, COMMENT_ID, ModerationAction.REJECT);
@@ -182,8 +175,7 @@ public class CommentServiceTests {
 
     @Test
     void moderateComment_throwsNotFound_whenCommentDoesNotExist() {
-        Set<Long> existingUsers = Set.of(ADMIN_ID);
-        when(userExistsClientAdapter.checkExists(List.of(ADMIN_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
+        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(ADMIN_ID);
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.moderateComment(ADMIN_ID, COMMENT_ID, ModerationAction.APPROVE))
@@ -193,8 +185,9 @@ public class CommentServiceTests {
 
     @Test
     void moderateComment_throwsNotFound_whenAdminDoesNotExist() {
-        Set<Long> nonExistingUsers = Set.of();
-        when(userExistsClientAdapter.checkExists(List.of(ADMIN_ID))).thenReturn(new RemoteCallResult.Success<>(nonExistingUsers));
+        doThrow(new NotFoundException(Entities.USER, ADMIN_ID))
+                .when(commentCheckService)
+                .checkUserExistence(ADMIN_ID);
 
         assertThatThrownBy(() -> commentService.moderateComment(ADMIN_ID, COMMENT_ID, ModerationAction.APPROVE))
                 .isInstanceOf(NotFoundException.class)
@@ -203,8 +196,7 @@ public class CommentServiceTests {
 
     @Test
     void deleteComment_deletesComment_ByAdmin_whenExists() {
-        Set<Long> existingUsers = Set.of(ADMIN_ID);
-        when(userExistsClientAdapter.checkExists(List.of(ADMIN_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
+        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(ADMIN_ID);
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
 
         commentService.deleteCommentByAdmin(ADMIN_ID, COMMENT_ID);
@@ -315,8 +307,7 @@ public class CommentServiceTests {
                 .build();
 
         List<Comment> comments = List.of(comment1, comment2);
-        Set<Long> existingUsers = Set.of(AUTHOR_ID);
-        when(userExistsClientAdapter.checkExists(List.of(AUTHOR_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
         when(commentRepository.findByAuthorId(eq(AUTHOR_ID))).thenReturn(comments);
 
         List<CommentShortDto> result = commentService.getUsersComments(AUTHOR_ID);
@@ -329,8 +320,7 @@ public class CommentServiceTests {
 
     @Test
     void getUsersComments_returnsEmptyList_whenNoComments() {
-        Set<Long> existingUsers = Set.of(AUTHOR_ID);
-        when(userExistsClientAdapter.checkExists(List.of(AUTHOR_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
         when(commentRepository.findByAuthorId(eq(AUTHOR_ID))).thenReturn(List.of());
 
         List<CommentShortDto> result = commentService.getUsersComments(AUTHOR_ID);
@@ -343,10 +333,8 @@ public class CommentServiceTests {
         long event = 3L;
 
         NewCommentDto dto = NewCommentDto.builder().text("Новый комментарий").build();
-        Set<Long> existingUsers = Set.of(AUTHOR_ID);
-        Set<Long> existingEvents = Set.of(EVENT_ID);
-        when(userExistsClientAdapter.checkExists(List.of(AUTHOR_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
-        when(eventExistsClientAdapter.checkExists(List.of(EVENT_ID))).thenReturn(new RemoteCallResult.Success<>(existingEvents));
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
+        when(commentCheckService.checkEventExistence(EVENT_ID)).thenReturn(EVENT_ID);
 
         Comment savedComment = Comment.builder()
                 .id(1L)
@@ -374,8 +362,7 @@ public class CommentServiceTests {
     @Test
     void updateComment_updatesTextToModeration_andSetsPending_whenOwnComment() {
         UpdateCommentDto dto = UpdateCommentDto.builder().text("Обновленный текст").build();
-        Set<Long> existingUsers = Set.of(AUTHOR_ID);
-        when(userExistsClientAdapter.checkExists(List.of(AUTHOR_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
 
         Comment savedComment = comment;
@@ -399,9 +386,11 @@ public class CommentServiceTests {
     void updateComment_throwsUnavailableUpdate_whenUserTriesToUpdateOthersComment() {
         UpdateCommentDto dto = UpdateCommentDto.builder().text("Текст").build();
 
-        Set<Long> existingUsers = Set.of(ANOTHER_USER_ID);
-        when(userExistsClientAdapter.checkExists(List.of(ANOTHER_USER_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
+        when(commentCheckService.checkUserExistence(ANOTHER_USER_ID)).thenReturn(ANOTHER_USER_ID);
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
+        doThrow(new UnavailableUpdateException(Entities.COMMENT.name(), COMMENT_ID))
+                .when(commentCheckService)
+                .checkCommentAuthorship(comment, ANOTHER_USER_ID);
 
         assertThatThrownBy(() -> commentService.updateComment(ANOTHER_USER_ID, COMMENT_ID, dto))
                 .isInstanceOf(UnavailableUpdateException.class)
@@ -413,8 +402,7 @@ public class CommentServiceTests {
     @Test
     void updateComment_throwsNotFound_whenCommentDoesNotExist() {
         UpdateCommentDto dto = UpdateCommentDto.builder().text("Текст").build();
-        Set<Long> existingUsers = Set.of(AUTHOR_ID);
-        when(userExistsClientAdapter.checkExists(List.of(AUTHOR_ID))).thenReturn(new RemoteCallResult.Success<>(existingUsers));
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.updateComment(AUTHOR_ID, COMMENT_ID, dto))

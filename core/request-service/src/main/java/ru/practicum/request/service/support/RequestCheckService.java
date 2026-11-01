@@ -1,5 +1,6 @@
 package ru.practicum.request.service.support;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,16 +39,19 @@ public class RequestCheckService {
         }
     }
 
-    public void checkEventExistence(long userId, long eventId) {
+    @CircuitBreaker(name = "event-checker", fallbackMethod = "checkEventExistenceFallback")
+    public boolean checkEventExistence(long userId, long eventId) {
         RemoteCallResult<Boolean> result = eventExistsClientAdapter.checkExistenceWithInitiatorId(eventId, userId);
 
-        switch (result) {
+        return switch (result) {
             case RemoteCallResult.Success<Boolean> s -> {
                 Boolean isEventExists = s.value();
 
                 if (!isEventExists) {
                     throw new NotFoundException(Entities.EVENT, eventId);
                 }
+
+                yield true;
             }
             case RemoteCallResult.BusinessFailure<?> bf -> {
                 log.warn("Бизнес-отказ при получении события: {}", bf.message());
@@ -55,21 +59,29 @@ public class RequestCheckService {
             }
             case RemoteCallResult.TechnicalFailure<?> tf -> {
                 log.warn("Технический сбой при получении события: {}", tf.reason());
-                throw new EventServiceInteractionException("Технический сбой при получении события: " + tf.reason());
+                yield false;
             }
-        }
+        };
     }
 
-    public void checkUserExistence(long userId) {
+    private boolean checkEventExistenceFallback(long userId, long eventId, Throwable t) {
+        log.error("Circuit Breaker открыт для event-checker. Возвращаем заглушку. Причина: {}", t.getMessage());
+        return false;
+    }
+
+    @CircuitBreaker(name = "user-checker", fallbackMethod = "checkUserExistenceFallback")
+    public Long checkUserExistence(long userId) {
         RemoteCallResult<Set<Long>> result = userExistsClientAdapter.checkExists(List.of(userId));
 
-        switch (result) {
+        return switch (result) {
             case RemoteCallResult.Success<Set<Long>> s -> {
                 Set<Long> usersIds = s.value();
 
                 if (!usersIds.contains(userId)) {
                     throw new NotFoundException(Entities.USER, userId);
                 }
+
+                yield userId;
             }
             case RemoteCallResult.BusinessFailure<?> bf -> {
                 log.warn("Бизнес-отказ при получении списка пользователей: {}", bf.message());
@@ -77,8 +89,13 @@ public class RequestCheckService {
             }
             case RemoteCallResult.TechnicalFailure<?> tf -> {
                 log.warn("Технический сбой при получении списка пользователей: {}", tf.reason());
-                throw new EventServiceInteractionException("Технический сбой при получении списка пользователей: " + tf.reason());
+                yield 0L;
             }
-        }
+        };
+    }
+
+    private Long checkUserExistenceFallback(long userId, Throwable t) {
+        log.error("Circuit Breaker открыт для user-checker. Возвращаем заглушку. Причина: {}", t.getMessage());
+        return 0L;
     }
 }

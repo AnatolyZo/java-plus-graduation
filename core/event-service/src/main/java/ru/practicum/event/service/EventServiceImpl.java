@@ -58,10 +58,10 @@ public class EventServiceImpl extends ServiceBase implements EventService {
     public EventDto createEvent(long userId, NewEventDto newEventDto) {
         log.trace("Инициировано создание события {} пользователем с id {}", newEventDto, userId);
         Category category = findEntityIn(categoryRepository, newEventDto.getCategory(), Entities.CATEGORY);
-        eventCheckService.checkUserExistence(userId);
+        Long userDbId = eventCheckService.checkUserExistence(userId);
         LocationEmbeddable locationEmbeddable = LocationMapper.toLocationEmbeddable(newEventDto.getLocation());
         //Формируем событие и сохраняем
-        Event event = eventFactoryService.buildEvent(newEventDto, category, userId, locationEmbeddable);
+        Event event = eventFactoryService.buildEvent(newEventDto, category, userDbId, locationEmbeddable);
 
         Event createdEvent = eventRepository.save(event);
         log.debug("Создано событие {}", createdEvent);

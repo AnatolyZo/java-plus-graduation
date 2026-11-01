@@ -5,8 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.common.Entities;
-import ru.practicum.feign.exception.EventServiceInteractionException;
-import ru.practicum.feign.result.RemoteCallResult;
 import ru.practicum.request.feign.*;
 import ru.practicum.request.dto.ChangedRequestStatusesDto;
 import ru.practicum.request.dto.RequestDto;
@@ -17,6 +15,7 @@ import ru.practicum.request.exception.DuplicatedDataException;
 import ru.practicum.request.exception.NotFoundException;
 import ru.practicum.request.exception.UnavailableUpdateException;
 import ru.practicum.request.repository.RequestRepository;
+import ru.practicum.request.service.support.FetchService;
 import ru.practicum.request.service.support.RequestCheckService;
 
 import java.time.LocalDateTime;
@@ -29,13 +28,18 @@ import java.util.Optional;
 @Slf4j
 public class RequestServiceImpl implements RequestService {
     private final RequestRepository requestRepository;
-    private final EventFetchClientAdapter eventFetchClientAdapter;
+    private final FetchService fetchService;
     private final RequestCheckService requestCheckService;
 
     @Override
     public List<RequestDto> getRequests(long userId, long eventId) {
         log.trace("Инициировано получение запроса пользователем с id {} к событию с id {}", userId, eventId);
-        requestCheckService.checkEventExistence(userId, eventId);
+        boolean isEventExists = requestCheckService.checkEventExistence(userId, eventId);
+
+        if (!isEventExists) {
+            return List.of();
+        }
+
         return getRequestsToUsersEvent(eventId);
     }
 
@@ -43,7 +47,15 @@ public class RequestServiceImpl implements RequestService {
     @Transactional
     public ChangedRequestStatusesDto updateRequestStatuses(long userId, long eventId, UpdateRequestStatusDto update) {
         log.trace("Инициировано обновление статусов запросов пользователем с id {} к событию с id {}, изменения - {}", userId, eventId, update);
-        EventDto event = getEventByIdUserId(userId, eventId);
+        EventDto event = fetchService.getEventByIdAndUserId(userId, eventId);
+
+        if (event.state().equals(EventStatus.FALLBACK)) {
+            return ChangedRequestStatusesDto.builder()
+                    .confirmedRequests(List.of())
+                    .rejectedRequests(List.of())
+                    .build();
+        }
+
         //Обработка ситуации, когда не установлено ограничение по количеству участников
         //или запрос не требует модерации
         if ((event.participantLimit() == 0 || !event.requestModeration()) && update.getStatus().equals(RequestStatus.CONFIRMED)) {
@@ -72,15 +84,21 @@ public class RequestServiceImpl implements RequestService {
             throw new DuplicatedDataException(Entities.REQUEST.name(), "eventId and userId", eventId);
         }
 
-        EventDto event = getEventById(eventId);
+        EventDto event = fetchService.getEventById(eventId);
         requestCheckService.requestChecks(event, userId);
-        requestCheckService.checkUserExistence(userId);
-        RequestStatus status = changeRequestStatus(event);
+        Long userDbId = requestCheckService.checkUserExistence(userId);
+
+        RequestStatus status;
+        if (!event.state().equals(EventStatus.FALLBACK)) {
+            status = changeRequestStatus(event);
+        } else {
+            status = RequestStatus.FALLBACK;
+        }
 
         Request request = Request.builder()
                 .created(LocalDateTime.now())
                 .eventId(eventId)
-                .requesterId(userId)
+                .requesterId(userDbId)
                 .status(status)
                 .build();
 
@@ -133,48 +151,6 @@ public class RequestServiceImpl implements RequestService {
                         .status(request.getStatus())
                         .build())
                 .toList();
-    }
-
-    private EventDto getEventByIdUserId(long userId, long eventId) {
-        RemoteCallResult<EventDto> result = eventFetchClientAdapter.getEventByIdAndUserId(userId, eventId);
-
-        return switch (result) {
-            case RemoteCallResult.Success<EventDto> s -> s.value();
-            case RemoteCallResult.BusinessFailure<?> bf -> {
-                if (bf.status() == 404) {
-                    log.warn("Событие не найдено: {}", bf.message());
-                    throw new NotFoundException(Entities.EVENT, eventId);
-                }
-
-                log.warn("Бизнес-отказ при получении события: {}", bf.message());
-                throw new EventServiceInteractionException("Проверьте корректность передаваемых данных, возникла ошибка при получении события: " + bf.message());
-            }
-            case RemoteCallResult.TechnicalFailure<?> tf -> {
-                log.warn("Технический сбой при получении события: {}", tf.reason());
-                throw new EventServiceInteractionException("Технический сбой при получении события: " + tf.reason());
-            }
-        };
-    }
-
-    private EventDto getEventById(long eventId) {
-        RemoteCallResult<EventDto> result = eventFetchClientAdapter.getEventById(eventId);
-
-        return switch (result) {
-            case RemoteCallResult.Success<EventDto> s -> s.value();
-            case RemoteCallResult.BusinessFailure<?> bf -> {
-                if (bf.status() == 404) {
-                    log.warn("Событие не найдено: {}", bf.message());
-                    throw new NotFoundException(Entities.EVENT, eventId);
-                }
-
-                log.warn("Бизнес-отказ при получении события: {}", bf.message());
-                throw new EventServiceInteractionException("Проверьте корректность передаваемых данных, возникла ошибка при получении события: " + bf.message());
-            }
-            case RemoteCallResult.TechnicalFailure<?> tf -> {
-                log.warn("Технический сбой при получении события: {}", tf.reason());
-                throw new EventServiceInteractionException("Технический сбой при получении события: " + tf.reason());
-            }
-        };
     }
 
     private List<RequestDto> getRequestsToUsersEvent(long eventId) {
@@ -281,7 +257,7 @@ public class RequestServiceImpl implements RequestService {
         int updatedConfirmedRequests = event.confirmedRequests() + confirmedRequests.size();
         ConfirmedRequestsUpdate confirmedRequestsUpdate = new ConfirmedRequestsUpdate(updatedConfirmedRequests);
 
-        updateConfirmedRequestsWithFallback(event.id(), confirmedRequestsUpdate);
+        fetchService.updateConfirmedRequests(event.id(), confirmedRequestsUpdate);
 
         log.debug("Обновлены статусы запросов: подтвержденные - {}, отклоненные - {}", confirmedRequests, rejectedRequests);
         return ChangedRequestStatusesDto.builder()
@@ -315,28 +291,12 @@ public class RequestServiceImpl implements RequestService {
         if (request.getStatus().equals(RequestStatus.CONFIRMED)) {
             int confirmedRequests = event.confirmedRequests();
             ConfirmedRequestsUpdate confirmedRequestsUpdate = new ConfirmedRequestsUpdate(++confirmedRequests);
-            updateConfirmedRequestsWithFallback(event.id(), confirmedRequestsUpdate);
+            fetchService.updateConfirmedRequests(event.id(), confirmedRequestsUpdate);
         }
     }
 
     private Request findRequestById(long requestId) {
         return requestRepository.findById(requestId)
                 .orElseThrow(() -> new NotFoundException(Entities.REQUEST, requestId));
-    }
-
-    private void updateConfirmedRequestsWithFallback(long eventId, ConfirmedRequestsUpdate confirmedRequestsUpdate) {
-        RemoteCallResult<EventDto> result = eventFetchClientAdapter.updateConfirmedRequests(eventId, confirmedRequestsUpdate);
-
-        switch (result) {
-            case RemoteCallResult.Success<EventDto> s -> s.value();
-            case RemoteCallResult.BusinessFailure<?> bf -> {
-                log.warn("Бизнес-отказ при обновлении доступных мест события: {}", bf.message());
-                throw new EventServiceInteractionException("Проверьте корректность передаваемых данных, возникла ошибка при обновлении доступных мест события: " + bf.message());
-            }
-            case RemoteCallResult.TechnicalFailure<?> tf -> {
-                log.warn("Технический сбой при обновлении доступных мест события: {}", tf.reason());
-                throw new EventServiceInteractionException("Технический сбой при обновлении доступных мест события: " + tf.reason());
-            }
-        }
     }
 }

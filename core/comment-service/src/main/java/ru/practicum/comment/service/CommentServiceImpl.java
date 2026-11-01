@@ -10,20 +10,15 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.comment.dto.*;
 import ru.practicum.comment.entity.Comment;
 import ru.practicum.comment.exception.NotFoundException;
-import ru.practicum.comment.exception.UnavailableUpdateException;
 import ru.practicum.comment.mapper.CommentMapper;
 import ru.practicum.comment.pagination.OffsetPageRequest;
 import ru.practicum.comment.repository.AdminCommentSearchSpecification;
 import ru.practicum.comment.repository.CommentRepository;
+import ru.practicum.comment.service.support.CommentCheckService;
 import ru.practicum.common.Entities;
-import ru.practicum.feign.adapters.EventExistsClientAdapter;
-import ru.practicum.feign.adapters.UserExistsClientAdapter;
-import ru.practicum.feign.exception.EventServiceInteractionException;
-import ru.practicum.feign.result.RemoteCallResult;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Set;
 
 @Slf4j
 @Service
@@ -31,8 +26,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class CommentServiceImpl implements CommentService {
     private final CommentRepository commentRepository;
-    private final UserExistsClientAdapter userExistsClientAdapter;
-    private final EventExistsClientAdapter eventExistsClientAdapter;
+    private final CommentCheckService commentCheckService;
 
     @Override
     public List<CommentShortDto> getComments(long eventId, int from, int size) {
@@ -74,7 +68,7 @@ public class CommentServiceImpl implements CommentService {
     public CommentDto moderateComment(long adminId, long commentId, ModerationAction action) {
         log.trace("Иницирована модерация комментария с id {} администратором с id {}", commentId, adminId);
         LocalDateTime now = LocalDateTime.now();
-        checkUserExistence(adminId);
+        Long adminDbId = commentCheckService.checkUserExistence(adminId);
         Comment comment = findCommentById(commentId);
 
         if (action.equals(ModerationAction.APPROVE)) {
@@ -89,7 +83,7 @@ public class CommentServiceImpl implements CommentService {
             comment.setStatus(CommentStatus.APPROVED);
         }
 
-        comment.setModeratorId(adminId);
+        comment.setModeratorId(adminDbId);
         comment.setModerated(now);
         comment.setTextOnModeration(null);
         commentRepository.save(comment);
@@ -101,19 +95,22 @@ public class CommentServiceImpl implements CommentService {
     @Transactional
     public void deleteCommentByAdmin(long adminId, long commentId) {
         log.trace("Иницировано удаление комментария с id {} администратором с id {}", commentId, adminId);
-        checkUserExistence(adminId);
+        Long adminDbId = commentCheckService.checkUserExistence(adminId);
         Comment comment = findCommentById(commentId);
-        commentRepository.delete(comment);
-        log.debug("Удален комметарий {}", comment);
+
+        if (adminId == adminDbId) {
+            commentRepository.delete(comment);
+            log.debug("Удален комметарий {}", comment);
+        }
     }
 
     @Override
     @Transactional
     public void deleteCommentByUser(long userId, long commentId) {
         log.trace("Иницировано удаление комментария с id {} пользователем с id {}", commentId, userId);
-        checkUserExistence(userId);
+        Long userDbId = commentCheckService.checkUserExistence(userId);
         Comment comment = findCommentById(commentId);
-        checkCommentAuthorship(comment, userId);
+        commentCheckService.checkCommentAuthorship(comment, userDbId);
         commentRepository.delete(comment);
         log.debug("Удален комметарий {}", comment);
     }
@@ -121,8 +118,8 @@ public class CommentServiceImpl implements CommentService {
     @Override
     public List<CommentShortDto> getUsersComments(long userId) {
         log.trace("Иницировано получение комментариев пользователя с id {}", userId);
-        checkUserExistence(userId);
-        List<Comment> commentsList = commentRepository.findByAuthorId(userId);
+        Long userDbId = commentCheckService.checkUserExistence(userId);
+        List<Comment> commentsList = commentRepository.findByAuthorId(userDbId);
         log.debug("Получены кооментарии пользователя {}", commentsList);
         return commentsList.stream()
                 .map(CommentMapper::toCommentShortDto)
@@ -133,10 +130,15 @@ public class CommentServiceImpl implements CommentService {
     @Transactional
     public CommentShortDto createComment(long userId, long eventId, NewCommentDto body) {
         log.trace("Иницировано создание комментария к событию с id {} пользователем с id {}", eventId, userId);
-        checkUserExistence(userId);
-        checkEventExistence(eventId);
+        Long userDbId = commentCheckService.checkUserExistence(userId);
+        Long eventDbId = commentCheckService.checkEventExistence(eventId);
         Comment comment = CommentMapper.toComment(body);
-        setFieldsOnCreation(comment, eventId, userId);
+        setFieldsOnCreation(comment, eventDbId, userDbId);
+
+        if (userDbId == 0 || eventDbId == 0) {
+            comment.setStatus(CommentStatus.VERIFICATION_REQUIRED);
+        }
+
         Comment createdComment = commentRepository.save(comment);
         log.info("Создан комментарий {}", createdComment);
         return CommentMapper.toCommentShortDto(createdComment);
@@ -146,9 +148,9 @@ public class CommentServiceImpl implements CommentService {
     @Transactional
     public CommentShortDto updateComment(long userId, long commentId, UpdateCommentDto body) {
         log.trace("Иницировано обновление комментария с id {} пользователем с id {}", commentId, userId);
-        checkUserExistence(userId);
+        Long userDbId = commentCheckService.checkUserExistence(userId);
         Comment comment = findCommentById(commentId);
-        checkCommentAuthorship(comment, userId);
+        commentCheckService.checkCommentAuthorship(comment, userDbId);
         comment.setTextOnModeration(body.getText());
         comment.setStatus(CommentStatus.PENDING);
         Comment updatedComment = commentRepository.save(comment);
@@ -161,56 +163,6 @@ public class CommentServiceImpl implements CommentService {
         comment.setEventId(eventId);
         comment.setAuthorId(authorId);
         comment.setStatus(CommentStatus.PENDING);
-    }
-
-    private void checkUserExistence(long userId) {
-        RemoteCallResult<Set<Long>> result = userExistsClientAdapter.checkExists(List.of(userId));
-
-        switch (result) {
-            case RemoteCallResult.Success<Set<Long>> s -> {
-                Set<Long> usersIds = s.value();
-
-                if (!usersIds.contains(userId)) {
-                    throw new NotFoundException(Entities.USER, userId);
-                }
-            }
-            case RemoteCallResult.BusinessFailure<?> bf -> {
-                log.warn("Бизнес-отказ при получении списка пользователей: {}", bf.message());
-                throw new EventServiceInteractionException("Проверьте корректность передаваемых данных, возникла ошибка при получении списка пользователей: " + bf.message());
-            }
-            case RemoteCallResult.TechnicalFailure<?> tf -> {
-                log.warn("Технический сбой при получении списка пользователей: {}", tf.reason());
-                throw new EventServiceInteractionException("Технический сбой при получении списка пользователей: " + tf.reason());
-            }
-        }
-    }
-
-    private void checkEventExistence(long eventId) {
-        RemoteCallResult<Set<Long>> result = eventExistsClientAdapter.checkExists(List.of(eventId));
-
-        switch (result) {
-            case RemoteCallResult.Success<Set<Long>> s -> {
-                Set<Long> eventIds = s.value();
-
-                if (!eventIds.contains(eventId)) {
-                    throw new NotFoundException(Entities.EVENT, eventId);
-                }
-            }
-            case RemoteCallResult.BusinessFailure<?> bf -> {
-                log.warn("Бизнес-отказ при получении списка событий: {}", bf.message());
-                throw new EventServiceInteractionException("Проверьте корректность передаваемых данных, возникла ошибка при получении списка событий: " + bf.message());
-            }
-            case RemoteCallResult.TechnicalFailure<?> tf -> {
-                log.warn("Технический сбой при получении списка событий: {}", tf.reason());
-                throw new EventServiceInteractionException("Технический сбой при получении списка событий: " + tf.reason());
-            }
-        }
-    }
-
-    private void checkCommentAuthorship(Comment comment, long userId) {
-        if (comment.getAuthorId() != userId) {
-            throw new UnavailableUpdateException(Entities.COMMENT.name(), comment.getId());
-        }
     }
 
     private Comment findCommentById(long commentId) {

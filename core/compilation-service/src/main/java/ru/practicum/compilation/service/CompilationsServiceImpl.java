@@ -11,12 +11,10 @@ import ru.practicum.compilation.dto.UpdateCompilationRequest;
 import ru.practicum.compilation.entity.Compilation;
 import ru.practicum.compilation.entity.CompilationEvent;
 import ru.practicum.compilation.exception.NotFoundException;
-import ru.practicum.compilation.feign.EventFetchClientAdapter;
 import ru.practicum.compilation.feign.EventShortDto;
 import ru.practicum.compilation.mapper.CompilationMapper;
 import ru.practicum.compilation.repository.CompilationRepository;
-import ru.practicum.feign.exception.EventServiceInteractionException;
-import ru.practicum.feign.result.RemoteCallResult;
+import ru.practicum.compilation.service.support.FetchService;
 
 import java.util.Collections;
 import java.util.List;
@@ -31,14 +29,15 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class CompilationsServiceImpl implements CompilationsService {
     private final CompilationRepository compilationRepository;
-    private final EventFetchClientAdapter eventFetchClientAdapter;
+    private final FetchService fetchService;
 
     @Override
     @Transactional
     public CompilationDto createCompilation(NewCompilationDto body) {
         log.trace("Инициировано сохранение подборки. Тело запроса: {}", body);
         List<Long> events = body.getEvents();
-        List<EventShortDto> eventShortDtoList = getEventShortDtosWithFallback(events);
+        List<EventShortDto> eventShortDtoList = fetchService.getEventShortDtos(events);
+        System.out.println(eventShortDtoList);
         //Получаем новый список id событий, так как не все моглибыть найдены по результатам предыдущей операции
         List<Long> eventIds = eventShortDtoList.stream()
                 .map(EventShortDto::getId)
@@ -88,7 +87,7 @@ public class CompilationsServiceImpl implements CompilationsService {
                 .orElseThrow(() -> new NotFoundException(Entities.COMPILATION, compId));
         log.trace("Подборка найдена: {}", compilation);
         List<Long> events = body.getEvents();
-        List<EventShortDto> eventShortDtoList = getEventShortDtosWithFallback(events);
+        List<EventShortDto> eventShortDtoList = fetchService.getEventShortDtos(events);
         List<Long> eventIds = eventShortDtoList.stream()
                 .map(EventShortDto::getId)
                 .toList();
@@ -102,7 +101,7 @@ public class CompilationsServiceImpl implements CompilationsService {
     private Compilation updateCompilationData(Compilation compilation,
                                               List<Long> eventIdsUpdate,
                                               UpdateCompilationRequest update) {
-        if (eventIdsUpdate != null) {
+        if (eventIdsUpdate != null && !(eventIdsUpdate.size() == 1 && eventIdsUpdate.getFirst() == 0)) {
             linkEvents(compilation, eventIdsUpdate);
         }
 
@@ -146,7 +145,7 @@ public class CompilationsServiceImpl implements CompilationsService {
                 .flatMap(compilation -> compilation.getEvents().stream())
                 .map(CompilationEvent::getEventId)
                 .toList();
-        return getEventShortDtosWithFallback(allEventIds);
+        return fetchService.getEventShortDtos(allEventIds);
     }
 
     private CompilationDto buildCompilationDto(Compilation compilation, Map<Long, EventShortDto> eventsMap) {
@@ -171,23 +170,7 @@ public class CompilationsServiceImpl implements CompilationsService {
         List<Long> eventIds = result.getEvents().stream()
                 .map(CompilationEvent::getEventId)
                 .toList();
-        List<EventShortDto> eventShortDtoList = getEventShortDtosWithFallback(eventIds);
+        List<EventShortDto> eventShortDtoList = fetchService.getEventShortDtos(eventIds);
         return composeComplicationResponse(result, eventShortDtoList);
-    }
-
-    private List<EventShortDto> getEventShortDtosWithFallback(List<Long> eventIds) {
-        RemoteCallResult<List<EventShortDto>> result = eventFetchClientAdapter.getEventShortDtos(eventIds);
-
-        return switch (result) {
-            case RemoteCallResult.Success<List<EventShortDto>> s -> s.value();
-            case RemoteCallResult.BusinessFailure<?> bf -> {
-                log.warn("Бизнес-отказ при получении событий: {}", bf.message());
-                throw new EventServiceInteractionException("Проверьте корректность передаваемых данных, возникла ошибка при получении событий: " + bf.message());
-            }
-            case RemoteCallResult.TechnicalFailure<?> tf -> {
-                log.warn("Технический сбой при получении событий: {}", tf.reason());
-                throw new EventServiceInteractionException("Технический сбой при получении событий: " + tf.reason());
-            }
-        };
     }
 }

@@ -7,7 +7,6 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import ru.practicum.compilation.dto.CategoryDto;
 import ru.practicum.compilation.dto.CompilationDto;
-import ru.practicum.compilation.feign.EventFetchClientAdapter;
 import ru.practicum.compilation.feign.EventShortDto;
 import ru.practicum.compilation.dto.NewCompilationDto;
 import ru.practicum.compilation.dto.UpdateCompilationRequest;
@@ -17,8 +16,8 @@ import ru.practicum.compilation.exception.NotFoundException;
 import ru.practicum.compilation.mapper.CompilationMapper;
 import ru.practicum.compilation.repository.CompilationRepository;
 import ru.practicum.compilation.service.CompilationsServiceImpl;
+import ru.practicum.compilation.service.support.FetchService;
 import ru.practicum.compilation.test.ServiceTest;
-import ru.practicum.feign.result.RemoteCallResult;
 
 import java.util.List;
 import java.util.Optional;
@@ -32,7 +31,7 @@ public class CompilationsServiceImplTest extends ServiceTest {
     @Mock
     private CompilationRepository compilationRepository;
     @Mock
-    private EventFetchClientAdapter eventFetchClientAdapter;
+    private FetchService fetchService;
 
     @Test
     public void createCompilation_ReturnsObject() {
@@ -60,7 +59,7 @@ public class CompilationsServiceImplTest extends ServiceTest {
         long savedId = 1L;
         Compilation saved = buildCompilation(savedId, body);
         whenSaveReturns(compilationRepository, saved);
-        when(eventFetchClientAdapter.getEventShortDtos(any())).thenReturn(new RemoteCallResult.Success<>(List.of()));
+        when(fetchService.getEventShortDtos(any())).thenReturn(List.of());
         // Act
         CompilationDto actual = compilationService.createCompilation(body);
 
@@ -149,7 +148,7 @@ public class CompilationsServiceImplTest extends ServiceTest {
         whenEntityFoundIn(compilationRepository, saved);
         whenSaveReturns(compilationRepository, update);
 
-        when(eventFetchClientAdapter.getEventShortDtos(any())).thenReturn(new RemoteCallResult.Success<>(List.of()));
+        when(fetchService.getEventShortDtos(any())).thenReturn(List.of());
         // Act
         CompilationDto actual = compilationService.updateCompilation(savedId, body);
 
@@ -168,7 +167,7 @@ public class CompilationsServiceImplTest extends ServiceTest {
         Compilation update = buildCompilation(saved, body);
         whenEntityFoundIn(compilationRepository, saved);
         whenSaveReturns(compilationRepository, update);
-        when(eventFetchClientAdapter.getEventShortDtos(any())).thenReturn(new RemoteCallResult.Success<>(List.of()));
+        when(fetchService.getEventShortDtos(any())).thenReturn(List.of());
         // Act
         CompilationDto actual = compilationService.updateCompilation(savedId, body);
 
@@ -203,7 +202,7 @@ public class CompilationsServiceImplTest extends ServiceTest {
                 buildCompilation(2)
         );
         whenFindWithOffsetReturns(compilations);
-        when(eventFetchClientAdapter.getEventShortDtos(any())).thenReturn(new RemoteCallResult.Success<>(List.of()));
+        when(fetchService.getEventShortDtos(any())).thenReturn(List.of());
         // Act
         List<CompilationDto> actual = compilationService.getCompilations(pinned, from, size);
 
@@ -221,7 +220,7 @@ public class CompilationsServiceImplTest extends ServiceTest {
         Compilation compilation = buildCompilation(compilationId);
         when(compilationRepository.findWithEventsById(Mockito.anyLong()))
                 .thenReturn(Optional.of(compilation));
-        when(eventFetchClientAdapter.getEventShortDtos(any())).thenReturn(new RemoteCallResult.Success<>(List.of()));
+        when(fetchService.getEventShortDtos(any())).thenReturn(List.of());
         // Act
         CompilationDto actual = compilationService.getCompilation(compilationId);
 
@@ -251,8 +250,8 @@ public class CompilationsServiceImplTest extends ServiceTest {
     }
 
     protected void whenEventsFound(List<EventShortDto> events) {
-        when(eventFetchClientAdapter.getEventShortDtos(Mockito.any()))
-                .thenReturn(new RemoteCallResult.Success<>(events));
+        when(fetchService.getEventShortDtos(Mockito.any()))
+                .thenReturn(events);
     }
 
     private void whenFindWithOffsetReturns(List<Compilation> compilations) {

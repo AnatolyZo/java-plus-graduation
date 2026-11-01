@@ -140,7 +140,7 @@ class EventServiceImplTests {
 
         when(categoryRepository.findById(eq(newEventDto.getCategory()))).thenReturn(Optional.of(category));
 
-        doNothing().when(eventCheckService).checkUserExistence(eq(USER_ID));
+        when(eventCheckService.checkUserExistence(eq(USER_ID))).thenReturn(USER_ID);
 
         when(eventFactoryService.buildEvent(
                 eq(newEventDto),

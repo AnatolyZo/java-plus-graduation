@@ -74,34 +74,10 @@ spring:
           predicates:
             - Path=/admin/compilations/**
 
-        - id: event-service-read
-          uri: lb://event-service
-          predicates:
-            - Path=/admin/events/**,/users/{userId}/events,/users/{userId}/events/{eventId},/events/**,/categories/**
-            - Method=GET
-          filters:
-            - name: Retry
-              args:
-                retries: 2
-                statuses:
-                  - BAD_GATEWAY
-                  - SERVICE_UNAVAILABLE
-                  - GATEWAY_TIMEOUT
-                methods:
-                  - GET
-                backoff:
-                  firstBackoff: 100ms
-                  maxBackoff: 500ms
-
-        - id: event-service
-          uri: lb://event-service
-          predicates:
-            - Path=/admin/events/**,/admin/categories/**,/users/{userId}/events,/users/{userId}/events/{eventId}
-
         - id: request-service-read
           uri: lb://request-service
           predicates:
-            - Path=/users/{userId}/requests,/users/{userId}/events/{eventId}/requests
+            - Path=/users/{userId}/requests/**,/users/{userId}/events/{eventId}/requests/**
             - Method=GET
           filters:
             - name: Retry
@@ -120,7 +96,31 @@ spring:
         - id: request-service
           uri: lb://request-service
           predicates:
-            - Path=/users/{userId}/requests/**,/users/{userId}/events/{eventId}/requests
+            - Path=/users/{userId}/requests/**,/users/{userId}/events/{eventId}/requests/**
+
+        - id: event-service-read
+          uri: lb://event-service
+          predicates:
+            - Path=/admin/events/**,/users/{userId}/events/**,/events/**,/categories/**
+            - Method=GET
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                methods:
+                  - GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+
+        - id: event-service
+          uri: lb://event-service
+          predicates:
+            - Path=/admin/events/**,/admin/categories/**,/users/{userId}/events/**
 
         - id: user-service-read
           uri: lb://user-service
