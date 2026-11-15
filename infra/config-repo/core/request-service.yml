@@ -42,6 +42,14 @@ resilience4j:
 server:
   port: 0
 
+grpc:
+  client:
+    collector:
+      address: 'discovery:///collector'
+      enableKeepAlive: true
+      keepAliveWithoutCalls: true
+      negotiationType: plaintext
+
 logging:
   level:
     org.zalando.logbook.Logbook: TRACE

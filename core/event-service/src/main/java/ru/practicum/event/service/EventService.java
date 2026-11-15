@@ -30,7 +30,7 @@ public interface EventService {
                                            String ip,
                                            String uri);
 
-    EventDto getPublishedEvent(long eventId, String ip, String uri);
+    EventDto getPublishedEvent(long userId, long eventId);
 
     List<EventDto> searchEvents(List<Long> users,
                                 List<String> states,
@@ -51,4 +51,8 @@ public interface EventService {
     EventDto updateConfirmedRequests(long eventId, ConfirmedRequestsUpdate confirmedRequests);
 
     List<EventShortDto> getEventShortDtos(List<Long> ids);
+
+    List<EventDto> getRecommendations(long userId);
+
+    void addLike(long userId, long eventId);
 }

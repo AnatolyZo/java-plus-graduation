@@ -37,7 +37,6 @@ public class CompilationsServiceImpl implements CompilationsService {
         log.trace("Инициировано сохранение подборки. Тело запроса: {}", body);
         List<Long> events = body.getEvents();
         List<EventShortDto> eventShortDtoList = fetchService.getEventShortDtos(events);
-        System.out.println(eventShortDtoList);
         //Получаем новый список id событий, так как не все моглибыть найдены по результатам предыдущей операции
         List<Long> eventIds = eventShortDtoList.stream()
                 .map(EventShortDto::getId)

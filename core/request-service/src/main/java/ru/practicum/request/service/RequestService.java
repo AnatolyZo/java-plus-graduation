@@ -1,6 +1,5 @@
 package ru.practicum.request.service;
 
-
 import ru.practicum.request.dto.ChangedRequestStatusesDto;
 import ru.practicum.request.dto.RequestDto;
 import ru.practicum.request.dto.UpdateRequestStatusDto;
@@ -17,4 +16,6 @@ public interface RequestService {
     RequestDto cancelRequest(long userId, long requestId);
 
     List<RequestDto> getUserRequests(long requesterId);
+
+    boolean checkExistenceByEventIdAndRequesterId(long eventId, long requesterId);
 }

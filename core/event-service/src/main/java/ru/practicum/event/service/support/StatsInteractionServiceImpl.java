@@ -2,77 +2,49 @@ package ru.practicum.event.service.support;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
-import ru.practicum.event.dto.event.EventDto;
-import ru.practicum.explorewithme.StatsClient;
-import ru.practicum.explorewithme.hit.EndpointHitRequest;
-import ru.practicum.explorewithme.stats.ViewStatsResponse;
+import ru.practicum.explorewithme.AnalyzerClient;
+import ru.practicum.explorewithme.CollectorClient;
+import ru.practicum.grpc.stats.service.dashboard.RecommendedEventProto;
 
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import static ru.practicum.common.ControllerConstants.URL_EVENTS;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class StatsInteractionServiceImpl implements StatsInteractionService {
-    private final StatsClient statsClient;
-
-    @Value("${spring.application.name}")
-    private String appName;
+    private final AnalyzerClient analyzerClient;
+    private final CollectorClient collectorClient;
+    private static final int AMOUNT_OF_RECOMMENDATIONS = 20;
 
     @Override
-    public List<EventDto> getEventsWithStats(List<EventDto> events) {
-        Map<String, Long> viewsByUri = getStats(statsClient, events);
-
-        events.forEach(eventDto -> {
-            long views = getViews(eventDto, viewsByUri);
-            eventDto.setViews(views);
-        });
-        log.debug("К событиям {} добавлено количество просмотров", events);
-        return events;
+    public Map<Long, Double> getStats(List<Long> eventIds) {
+        Stream<RecommendedEventProto> stats = analyzerClient.getInteractionsCount(eventIds);
+        return buildRatingsMap(stats);
     }
 
     @Override
-    public void saveHit(String ip, String uri) {
-        statsClient.addStatistics(EndpointHitRequest.builder()
-                .app(appName)
-                .uri(uri)
-                .ip(ip)
-                .timestamp(LocalDateTime.now())
-                .build());
+    public Map<Long, Double> getRecommendations(long userId) {
+        Stream<RecommendedEventProto> stats = analyzerClient.getRecommendationsForUser(userId, AMOUNT_OF_RECOMMENDATIONS);
+        return buildRatingsMap(stats);
     }
 
-    private Map<String, Long> getStats(StatsClient statsClient, List<EventDto> events) {
-        LocalDateTime start = getStartPoint(events);
-        LocalDateTime end = LocalDateTime.now();
-        List<String> uris = getUris(events);
-        List<ViewStatsResponse> stats = statsClient.getStatistics(start, end, uris, true);
-        Map<String, Long> viewsByUri = new HashMap<>();
-        stats.forEach(stat -> viewsByUri.put(stat.getUri(), stat.getHits()));
-        return viewsByUri;
+    @Override
+    public void addView(long userId, long eventId) {
+        collectorClient.addView(userId, eventId);
     }
 
-    private long getViews(EventDto event, Map<String, Long> viewsByUri) {
-        return viewsByUri.getOrDefault(URL_EVENTS + "/" + event.getId(), 0L);
+    @Override
+    public void addLike(long userId, long eventId) {
+        collectorClient.addLike(userId, eventId);
     }
 
-    private LocalDateTime getStartPoint(List<EventDto> events) {
-        return events.stream()
-                .map(EventDto::getCreatedOn)
-                .min(LocalDateTime::compareTo)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No events were found"));
-    }
-
-    private List<String> getUris(List<EventDto> events) {
-        return events.stream()
-                .map(event -> URL_EVENTS + "/" + event.getId())
-                .toList();
+    private Map<Long, Double> buildRatingsMap(Stream<RecommendedEventProto> stats) {
+        Map<Long, Double> ratingByEventId = new HashMap<>();
+        stats.forEach(stat -> ratingByEventId.put(stat.getEventId(), stat.getScore()));
+        return ratingByEventId;
     }
 }

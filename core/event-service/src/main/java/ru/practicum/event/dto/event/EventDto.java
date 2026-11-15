@@ -37,5 +37,5 @@ public class EventDto {
     private EventStatus status;
     private String title;
     @Setter
-    private long views;
+    private double rating;
 }

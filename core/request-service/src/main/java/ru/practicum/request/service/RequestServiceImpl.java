@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.common.Entities;
+import ru.practicum.explorewithme.CollectorClient;
 import ru.practicum.request.feign.*;
 import ru.practicum.request.dto.ChangedRequestStatusesDto;
 import ru.practicum.request.dto.RequestDto;
@@ -30,6 +31,7 @@ public class RequestServiceImpl implements RequestService {
     private final RequestRepository requestRepository;
     private final FetchService fetchService;
     private final RequestCheckService requestCheckService;
+    private final CollectorClient collectorClient;
 
     @Override
     public List<RequestDto> getRequests(long userId, long eventId) {
@@ -104,6 +106,7 @@ public class RequestServiceImpl implements RequestService {
 
         Request createdRequest = requestRepository.save(request);
         incrementEventConfirmedRequests(createdRequest, event);
+        collectorClient.addRegistration(userId, eventId);
         log.debug("Создан запрос {}", createdRequest);
         return RequestDto.builder()
                 .id(createdRequest.getId())
@@ -151,6 +154,11 @@ public class RequestServiceImpl implements RequestService {
                         .status(request.getStatus())
                         .build())
                 .toList();
+    }
+
+    @Override
+    public boolean checkExistenceByEventIdAndRequesterId(long eventId, long requesterId) {
+        return requestRepository.existsByEventIdAndRequesterIdAndStatus(eventId, requesterId, RequestStatus.CONFIRMED);
     }
 
     private List<RequestDto> getRequestsToUsersEvent(long eventId) {

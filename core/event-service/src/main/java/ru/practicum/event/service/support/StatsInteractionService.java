@@ -1,11 +1,14 @@
 package ru.practicum.event.service.support;
 
-import ru.practicum.event.dto.event.EventDto;
-
 import java.util.List;
+import java.util.Map;
 
 public interface StatsInteractionService {
-    List<EventDto> getEventsWithStats(List<EventDto> events);
+    Map<Long, Double> getStats(List<Long> eventIds);
 
-    void saveHit(String ip, String uri);
+    Map<Long, Double> getRecommendations(long userId);
+
+    void addView(long userId, long eventId);
+
+    void addLike(long userId, long eventId);
 }

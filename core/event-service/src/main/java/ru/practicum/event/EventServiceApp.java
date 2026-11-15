@@ -6,10 +6,11 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.ComponentScan;
 
 @SpringBootApplication
-@EnableFeignClients(basePackages = {"ru.practicum.feign"})
+@EnableFeignClients(basePackages = {"ru.practicum.feign", "ru.practicum.event.feign"})
 @ComponentScan(basePackages = {
         "ru.practicum.event",
-        "ru.practicum.feign.adapters"
+        "ru.practicum.feign.adapters",
+        "ru.practicum.explorewithme"
 })
 public class EventServiceApp {
     public static void main(String[] args) {

@@ -83,6 +83,11 @@ public class ErrorHandler {
         return createErrorResponse(e.getMessage(), "date is early", HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler
+    public ResponseEntity<ApiError> eventNotMet(EventNotMetException e) {
+        return createErrorResponse(e.getMessage(), "event not met (no registration)", HttpStatus.BAD_REQUEST);
+    }
+
     private ResponseEntity<ApiError> createErrorResponse(String message, String reason, HttpStatus status) {
         return ResponseEntity.status(status).body(
                 new ApiError(

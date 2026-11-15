@@ -77,7 +77,7 @@ spring:
         - id: request-service-read
           uri: lb://request-service
           predicates:
-            - Path=/users/{userId}/requests/**,/users/{userId}/events/{eventId}/requests/**
+            - Path=/admin/requests/**,/users/{userId}/requests/**,/users/{userId}/events/{eventId}/requests/**
             - Method=GET
           filters:
             - name: Retry
@@ -120,7 +120,7 @@ spring:
         - id: event-service
           uri: lb://event-service
           predicates:
-            - Path=/admin/events/**,/admin/categories/**,/users/{userId}/events/**
+            - Path=/admin/events/**,/admin/categories/**,/users/{userId}/events/**,/events/{eventId}/like/**
 
         - id: user-service-read
           uri: lb://user-service

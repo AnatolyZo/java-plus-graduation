@@ -9,7 +9,8 @@ import org.springframework.context.annotation.ComponentScan;
 @EnableFeignClients(basePackages = {"ru.practicum.feign", "ru.practicum.request"})
 @ComponentScan(basePackages = {
         "ru.practicum.request",
-        "ru.practicum.feign.adapters"
+        "ru.practicum.feign.adapters",
+        "ru.practicum.explorewithme"
 })
 public class RequestServiceApp {
     public static void main(String[] args) {

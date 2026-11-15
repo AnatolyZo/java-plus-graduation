@@ -28,7 +28,6 @@ import ru.practicum.event.service.support.StatsInteractionService;
 import java.time.LocalDateTime;
 import java.util.*;
 
-
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -46,11 +45,7 @@ public class EventServiceImpl extends ServiceBase implements EventService {
         Pageable pageable = new OffsetPageRequest(from, size);
         List<Event> events = eventRepository.findByInitiatorId(userId, pageable);
         log.debug("Получен список событий {}", events);
-        if (events.isEmpty()) {
-            return List.of();
-        }
-
-        return eventFactoryService.buildEventsWithStats(events);
+        return getStatsAndBuildEvent(events);
     }
 
     @Override
@@ -76,7 +71,7 @@ public class EventServiceImpl extends ServiceBase implements EventService {
         log.trace("Инициировано получение события {} пользователем с id {}", eventId, userId);
         Event event = getEventByIdAndUserId(eventId, userId);
         log.debug("Получено событие {}", event);
-        return eventFactoryService.buildEventWithStats(event);
+        return getStatsAndBuildEvent(List.of(event)).getFirst();
     }
 
     @Override
@@ -92,7 +87,7 @@ public class EventServiceImpl extends ServiceBase implements EventService {
 
         Event updatedEvent = eventRepository.save(event);
         log.debug("Обновлено событие {}", updatedEvent);
-        return eventFactoryService.buildEventWithStats(updatedEvent);
+        return getStatsAndBuildEvent(List.of(updatedEvent)).getFirst();
     }
 
     @Override
@@ -109,7 +104,6 @@ public class EventServiceImpl extends ServiceBase implements EventService {
                                                   String uri) {
         log.trace("Инициировано получение опубликованных событий");
         eventCheckService.checkDateRange(rangeStart, rangeEnd);
-        statsInteractionService.saveHit(ip, uri);
 
         LocalDateTime start = rangeStart;
         if (rangeStart == null && rangeEnd == null) {
@@ -132,7 +126,8 @@ public class EventServiceImpl extends ServiceBase implements EventService {
                 return List.of();
             }
 
-            List<EventShortDto> dtos = eventFactoryService.buildEventsShortWithStats(events);
+            Map<Long, Double> ratingByEventId = getEventIdsAndStats(events);
+            List<EventShortDto> dtos = eventFactoryService.buildEventsShortWithStats(events, ratingByEventId);
             log.debug("Получен список опубликованных событий {}", dtos);
             return getPage(dtos, from, size);
         }
@@ -145,18 +140,19 @@ public class EventServiceImpl extends ServiceBase implements EventService {
             return List.of();
         }
 
-        List<EventShortDto> dtos = eventFactoryService.buildEventsShortWithStats(events);
+        Map<Long, Double> ratingByEventId = getEventIdsAndStats(events);
+        List<EventShortDto> dtos = eventFactoryService.buildEventsShortWithStats(events, ratingByEventId);
         log.debug("Получен список опубликованных событий {}", dtos);
         return dtos;
     }
 
     @Override
-    public EventDto getPublishedEvent(long eventId, String ip, String uri) {
+    public EventDto getPublishedEvent(long userId, long eventId) {
         log.trace("Инициировано получение опубликованного события с id {}", eventId);
         Event event = eventRepository.findByIdAndStatus(eventId, EventStatus.PUBLISHED)
                 .orElseThrow(() -> new NotFoundException(Entities.EVENT, eventId));
-        statsInteractionService.saveHit(ip, uri);
-        return eventFactoryService.buildEventWithStats(event);
+        statsInteractionService.addView(userId, eventId);
+        return getStatsAndBuildEvent(List.of(event)).getFirst();
     }
 
     @Override
@@ -182,12 +178,7 @@ public class EventServiceImpl extends ServiceBase implements EventService {
         Page<Event> eventPage = eventRepository.findAll(spec, pageable);
         List<Event> events = eventPage.getContent();
         log.debug("Получен список событий {}", events);
-        if (events.isEmpty()) {
-            return List.of();
-        }
-
-        List<EventDto> eventDtoList = eventFactoryService.buildEventDtoList(events);
-        return statsInteractionService.getEventsWithStats(eventDtoList);
+        return getStatsAndBuildEvent(events);
     }
 
     @Override
@@ -205,7 +196,7 @@ public class EventServiceImpl extends ServiceBase implements EventService {
         eventFactoryService.updateEventFields(event, update, status);
         Event updatedEvent = eventRepository.save(event);
         log.debug("Обновлено событие {}", updatedEvent);
-        return eventFactoryService.buildEventWithStats(updatedEvent);
+        return getStatsAndBuildEvent(List.of(updatedEvent)).getFirst();
     }
 
     @Override
@@ -250,16 +241,31 @@ public class EventServiceImpl extends ServiceBase implements EventService {
         log.trace("Инициировано получение событий по id событий {} для внутренних нужд", ids);
         List<Event> events = eventRepository.findByIdIn(ids);
 
-        if (events.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<EventDto> eventWithStats = eventFactoryService.buildEventsWithStats(events);
+        List<EventDto> eventWithStats = getStatsAndBuildEvent(events);
         List<EventShortDto> eventShortDtoList = eventWithStats.stream()
                 .map(EventMapper::toEventShortDto)
                 .toList();
         log.debug("Получены события {} по списку id {}", eventShortDtoList, ids);
         return eventShortDtoList;
+    }
+
+    @Override
+    public List<EventDto> getRecommendations(long userId) {
+        Map<Long, Double> recommendations = statsInteractionService.getRecommendations(userId);
+
+        if (recommendations.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> eventIds = recommendations.keySet().stream().toList();
+        List<Event> events = eventRepository.findByIdIn(eventIds);
+        return eventFactoryService.buildEventsWithStats(events, recommendations);
+    }
+
+    @Override
+    public void addLike(long userId, long eventId) {
+        eventCheckService.checkRequestExistence(eventId, userId);
+        statsInteractionService.addLike(userId, eventId);
     }
 
     private <T> List<T> getPage(List<T> source, int from, int size) {
@@ -269,5 +275,21 @@ public class EventServiceImpl extends ServiceBase implements EventService {
 
         int toIndex = Math.min(from + size, source.size());
         return source.subList(from, toIndex);
+    }
+
+    private Map<Long, Double> getEventIdsAndStats(List<Event> events) {
+        List<Long> eventIds = events.stream()
+                .map(Event::getId)
+                .toList();
+        return statsInteractionService.getStats(eventIds);
+    }
+
+    private List<EventDto> getStatsAndBuildEvent(List<Event> events) {
+        if (events.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Double> ratingByEventId = getEventIdsAndStats(events);
+        return eventFactoryService.buildEventsWithStats(events, ratingByEventId);
     }
 }
