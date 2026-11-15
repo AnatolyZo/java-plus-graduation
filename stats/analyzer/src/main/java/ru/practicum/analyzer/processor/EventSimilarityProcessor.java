@@ -74,7 +74,12 @@ public class EventSimilarityProcessor implements Runnable {
                                 .timestamp(eventSimilarityAvro.getTimestamp())
                                 .build();
 
-                        repository.save(eventSimilarity);
+                        repository.upsertSimilarity(
+                                eventSimilarity.getEventA(),
+                                eventSimilarity.getEventB(),
+                                eventSimilarity.getScore(),
+                                eventSimilarity.getTimestamp()
+                        );
 
                         putOffset(incomingRecord, offsets);
                     } catch (Exception e) {

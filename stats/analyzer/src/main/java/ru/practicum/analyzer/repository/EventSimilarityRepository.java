@@ -1,16 +1,30 @@
 package ru.practicum.analyzer.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.analyzer.entity.EventScoreView;
 import ru.practicum.analyzer.entity.EventSimilarity;
 import ru.practicum.analyzer.entity.EventSimilarityId;
 import ru.practicum.analyzer.entity.NeighborView;
 
+import java.time.Instant;
 import java.util.List;
 
 public interface EventSimilarityRepository extends JpaRepository<EventSimilarity, EventSimilarityId> {
+    @Modifying
+    @Transactional
+    @Query(value = """
+    INSERT INTO event_similarity (event_a, event_b, score, timestamp)
+    VALUES (:eventA, :eventB, :score, :timestamp)
+    ON CONFLICT (event_a, event_b)
+    DO UPDATE SET score = EXCLUDED.score, timestamp = EXCLUDED.timestamp
+    """, nativeQuery = true)
+    void upsertSimilarity(@Param("eventA") long eventA, @Param("eventB") long eventB,
+                          @Param("score") double score, @Param("timestamp") Instant timestamp);
+
     @Query(value = """
             SELECT *
             FROM event_similarity es

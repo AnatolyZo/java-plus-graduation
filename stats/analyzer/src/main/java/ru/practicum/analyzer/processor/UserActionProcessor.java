@@ -80,7 +80,12 @@ public class UserActionProcessor implements Runnable {
                                 .timestamp(userActionAvro.getTimestamp())
                                 .build();
 
-                        repository.save(userAction);
+                        repository.upsertUserAction(
+                                userAction.getUserId(),
+                                userAction.getEventId(),
+                                userAction.getRating(),
+                                userAction.getTimestamp()
+                        );
 
                         putOffset(incomingRecord, offsets);
                     } catch (Exception e) {

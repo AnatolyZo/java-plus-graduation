@@ -83,9 +83,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 
         List<RecommendedEventProto> interactions = buildInteractionsList(request);
         log.debug("Для списка id = {} сформирован список сумм максимальных весов действий {}", request.getEventIdList(), interactions);
-        return userActionRepository.getEventIdsAndRatingSums(request.getEventIdList()).stream()
-                .map(eventScoreView -> buildRecommendedEventProto(eventScoreView.getEventId(), eventScoreView.getScore()))
-                .toList();
+        return interactions;
     }
 
     private Map<Long, List<NeighborView>> getNeighbors(List<EventScoreView> similarities, long userId) {
