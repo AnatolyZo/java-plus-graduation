@@ -100,7 +100,7 @@ public class CompilationsServiceImpl implements CompilationsService {
     private Compilation updateCompilationData(Compilation compilation,
                                               List<Long> eventIdsUpdate,
                                               UpdateCompilationRequest update) {
-        if (eventIdsUpdate != null && !(eventIdsUpdate.size() == 1 && eventIdsUpdate.getFirst() == 0)) {
+        if (eventIdsUpdate != null) {
             linkEvents(compilation, eventIdsUpdate);
         }
 

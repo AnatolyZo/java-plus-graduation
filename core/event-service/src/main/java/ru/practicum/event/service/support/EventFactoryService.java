@@ -36,10 +36,6 @@ public class EventFactoryService {
             event.setPaid(update.getPaid());
         }
 
-        if (update.getAnnotation() != null && !update.getAnnotation().isEmpty()) {
-            event.setAnnotation(update.getAnnotation());
-        }
-
         if (update.getParticipantLimit() != null) {
             event.setParticipantLimit(update.getParticipantLimit());
         }

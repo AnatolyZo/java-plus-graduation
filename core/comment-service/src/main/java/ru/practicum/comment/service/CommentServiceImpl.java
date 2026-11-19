@@ -19,6 +19,7 @@ import ru.practicum.common.Entities;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -68,7 +69,12 @@ public class CommentServiceImpl implements CommentService {
     public CommentDto moderateComment(long adminId, long commentId, ModerationAction action) {
         log.trace("Иницирована модерация комментария с id {} администратором с id {}", commentId, adminId);
         LocalDateTime now = LocalDateTime.now();
-        Long adminDbId = commentCheckService.checkUserExistence(adminId);
+        Set<Long> usersIds = commentCheckService.checkUserExistence(adminId);
+
+        if (!usersIds.contains(adminId)) {
+            throw new NotFoundException(Entities.USER, adminId);
+        }
+
         Comment comment = findCommentById(commentId);
 
         if (action.equals(ModerationAction.APPROVE)) {
@@ -83,7 +89,7 @@ public class CommentServiceImpl implements CommentService {
             comment.setStatus(CommentStatus.APPROVED);
         }
 
-        comment.setModeratorId(adminDbId);
+        comment.setModeratorId(adminId);
         comment.setModerated(now);
         comment.setTextOnModeration(null);
         commentRepository.save(comment);
@@ -95,22 +101,30 @@ public class CommentServiceImpl implements CommentService {
     @Transactional
     public void deleteCommentByAdmin(long adminId, long commentId) {
         log.trace("Иницировано удаление комментария с id {} администратором с id {}", commentId, adminId);
-        Long adminDbId = commentCheckService.checkUserExistence(adminId);
+        Set<Long> usersIds = commentCheckService.checkUserExistence(adminId);
+
+        if (!usersIds.contains(adminId)) {
+            throw new NotFoundException(Entities.USER, adminId);
+        }
+
         Comment comment = findCommentById(commentId);
 
-        if (adminId == adminDbId) {
-            commentRepository.delete(comment);
-            log.debug("Удален комметарий {}", comment);
-        }
+        commentRepository.delete(comment);
+        log.debug("Удален комметарий {}", comment);
     }
 
     @Override
     @Transactional
     public void deleteCommentByUser(long userId, long commentId) {
         log.trace("Иницировано удаление комментария с id {} пользователем с id {}", commentId, userId);
-        Long userDbId = commentCheckService.checkUserExistence(userId);
+        Set<Long> usersIds = commentCheckService.checkUserExistence(userId);
+
+        if (!usersIds.contains(userId)) {
+            throw new NotFoundException(Entities.USER, userId);
+        }
+
         Comment comment = findCommentById(commentId);
-        commentCheckService.checkCommentAuthorship(comment, userDbId);
+        commentCheckService.checkCommentAuthorship(comment, userId);
         commentRepository.delete(comment);
         log.debug("Удален комметарий {}", comment);
     }
@@ -118,8 +132,13 @@ public class CommentServiceImpl implements CommentService {
     @Override
     public List<CommentShortDto> getUsersComments(long userId) {
         log.trace("Иницировано получение комментариев пользователя с id {}", userId);
-        Long userDbId = commentCheckService.checkUserExistence(userId);
-        List<Comment> commentsList = commentRepository.findByAuthorId(userDbId);
+        Set<Long> usersIds = commentCheckService.checkUserExistence(userId);
+
+        if (!usersIds.contains(userId)) {
+            throw new NotFoundException(Entities.USER, userId);
+        }
+
+        List<Comment> commentsList = commentRepository.findByAuthorId(userId);
         log.debug("Получены кооментарии пользователя {}", commentsList);
         return commentsList.stream()
                 .map(CommentMapper::toCommentShortDto)
@@ -130,14 +149,20 @@ public class CommentServiceImpl implements CommentService {
     @Transactional
     public CommentShortDto createComment(long userId, long eventId, NewCommentDto body) {
         log.trace("Иницировано создание комментария к событию с id {} пользователем с id {}", eventId, userId);
-        Long userDbId = commentCheckService.checkUserExistence(userId);
-        Long eventDbId = commentCheckService.checkEventExistence(eventId);
-        Comment comment = CommentMapper.toComment(body);
-        setFieldsOnCreation(comment, eventDbId, userDbId);
+        Set<Long> usersIds = commentCheckService.checkUserExistence(userId);
 
-        if (userDbId == 0 || eventDbId == 0) {
-            comment.setStatus(CommentStatus.VERIFICATION_REQUIRED);
+        if (!usersIds.contains(userId)) {
+            throw new NotFoundException(Entities.USER, userId);
         }
+
+        Set<Long> eventIds = commentCheckService.checkEventExistence(eventId);
+
+        if (!eventIds.contains(eventId)) {
+            throw new NotFoundException(Entities.EVENT, eventId);
+        }
+
+        Comment comment = CommentMapper.toComment(body);
+        setFieldsOnCreation(comment, eventId, userId);
 
         Comment createdComment = commentRepository.save(comment);
         log.info("Создан комментарий {}", createdComment);
@@ -148,9 +173,14 @@ public class CommentServiceImpl implements CommentService {
     @Transactional
     public CommentShortDto updateComment(long userId, long commentId, UpdateCommentDto body) {
         log.trace("Иницировано обновление комментария с id {} пользователем с id {}", commentId, userId);
-        Long userDbId = commentCheckService.checkUserExistence(userId);
+        Set<Long> usersIds = commentCheckService.checkUserExistence(userId);
+
+        if (!usersIds.contains(userId)) {
+            throw new NotFoundException(Entities.USER, userId);
+        }
+
         Comment comment = findCommentById(commentId);
-        commentCheckService.checkCommentAuthorship(comment, userDbId);
+        commentCheckService.checkCommentAuthorship(comment, userId);
         comment.setTextOnModeration(body.getText());
         comment.setStatus(CommentStatus.PENDING);
         Comment updatedComment = commentRepository.save(comment);

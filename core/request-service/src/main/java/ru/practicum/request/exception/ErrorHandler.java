@@ -1,5 +1,6 @@
 package ru.practicum.request.exception;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -8,6 +9,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import ru.practicum.feign.exception.RemoteCallBusinessException;
+import ru.practicum.feign.exception.RemoteCallTechnicalException;
 
 import java.time.LocalDateTime;
 
@@ -64,6 +67,21 @@ public class ErrorHandler {
                 "unexpected error",
                 HttpStatus.INTERNAL_SERVER_ERROR
         );
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiError> businessFailure(RemoteCallBusinessException e) {
+        return createErrorResponse(e.getMessage(), "business failure", HttpStatus.resolve(e.getStatus()));
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiError> technicalFailure(RemoteCallTechnicalException e) {
+        return createErrorResponse(e.getMessage(), "technical failure", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiError> openCircuitBreaker(CallNotPermittedException e) {
+        return createErrorResponse(e.getMessage(), "service is unavailable", HttpStatus.SERVICE_UNAVAILABLE);
     }
 
     private ResponseEntity<ApiError> createErrorResponse(String message, String reason, HttpStatus status) {

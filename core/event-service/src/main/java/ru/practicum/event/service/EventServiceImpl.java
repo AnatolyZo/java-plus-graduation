@@ -13,6 +13,7 @@ import ru.practicum.event.dto.event.*;
 import ru.practicum.event.entity.Category;
 import ru.practicum.event.entity.Event;
 import ru.practicum.event.entity.LocationEmbeddable;
+import ru.practicum.event.exception.EventNotMetException;
 import ru.practicum.event.exception.NotFoundException;
 import ru.practicum.event.mapper.EventMapper;
 import ru.practicum.event.mapper.LocationMapper;
@@ -53,10 +54,15 @@ public class EventServiceImpl extends ServiceBase implements EventService {
     public EventDto createEvent(long userId, NewEventDto newEventDto) {
         log.trace("Инициировано создание события {} пользователем с id {}", newEventDto, userId);
         Category category = findEntityIn(categoryRepository, newEventDto.getCategory(), Entities.CATEGORY);
-        Long userDbId = eventCheckService.checkUserExistence(userId);
+        Set<Long> userDbId = eventCheckService.checkUserExistence(userId);
+
+        if (!userDbId.contains(userId)) {
+            throw new NotFoundException(Entities.USER, userId);
+        }
+
         LocationEmbeddable locationEmbeddable = LocationMapper.toLocationEmbeddable(newEventDto.getLocation());
         //Формируем событие и сохраняем
-        Event event = eventFactoryService.buildEvent(newEventDto, category, userDbId, locationEmbeddable);
+        Event event = eventFactoryService.buildEvent(newEventDto, category, userId, locationEmbeddable);
 
         Event createdEvent = eventRepository.save(event);
         log.debug("Создано событие {}", createdEvent);
@@ -264,7 +270,12 @@ public class EventServiceImpl extends ServiceBase implements EventService {
 
     @Override
     public void addLike(long userId, long eventId) {
-        eventCheckService.checkRequestExistence(eventId, userId);
+        boolean isEventMet = eventCheckService.checkRequestExistence(eventId, userId);
+
+        if (!isEventMet) {
+            throw new EventNotMetException(eventId, userId);
+        }
+
         statsInteractionService.addLike(userId, eventId);
     }
 

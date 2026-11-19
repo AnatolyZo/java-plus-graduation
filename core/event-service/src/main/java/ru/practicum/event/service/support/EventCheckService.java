@@ -1,5 +1,6 @@
 package ru.practicum.event.service.support;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +12,8 @@ import ru.practicum.event.entity.Event;
 import ru.practicum.event.exception.*;
 import ru.practicum.event.feign.RequestExistsClientAdapter;
 import ru.practicum.feign.adapters.UserExistsClientAdapter;
-import ru.practicum.feign.exception.EventServiceInteractionException;
+import ru.practicum.feign.exception.RemoteCallBusinessException;
+import ru.practicum.feign.exception.RemoteCallTechnicalException;
 import ru.practicum.feign.result.RemoteCallResult;
 
 import java.time.LocalDateTime;
@@ -45,33 +47,34 @@ public class EventCheckService {
     }
 
     @CircuitBreaker(name = "user-checker", fallbackMethod = "checkUserExistenceFallback")
-    public Long checkUserExistence(long userId) {
+    public Set<Long> checkUserExistence(long userId) {
         RemoteCallResult<Set<Long>> result = userExistsClientAdapter.checkExists(List.of(userId));
 
         return switch (result) {
-            case RemoteCallResult.Success<Set<Long>> s -> {
-                Set<Long> usersIds = s.value();
-
-                if (!usersIds.contains(userId)) {
-                    throw new NotFoundException(Entities.USER, userId);
-                }
-
-                yield userId;
-            }
+            case RemoteCallResult.Success<Set<Long>> s -> s.value();
             case RemoteCallResult.BusinessFailure<?> bf -> {
                 log.warn("Бизнес-отказ при получении списка пользователей: {}", bf.message());
-                throw new EventServiceInteractionException("Проверьте корректность передаваемых данных, возникла ошибка при получении списка пользователей: " + bf.message());
+                throw new RemoteCallBusinessException(bf.status(), "Проверьте корректность передаваемых данных, возникла ошибка при получении списка пользователей: " + bf.message());
             }
             case RemoteCallResult.TechnicalFailure<?> tf -> {
                 log.warn("Технический сбой при получении списка пользователей: {}", tf.reason());
-                yield 0L;
+                throw new RemoteCallTechnicalException("Технический сбой при получении списка пользователей: " + tf.reason());
             }
         };
     }
 
-    private Long checkUserExistenceFallback(long userId, Throwable t) {
-        log.error("Circuit Breaker открыт для user-checker. Возвращаем заглушку. Причина: {}", t.getMessage());
-        return 0L;
+    private Set<Long> checkUserExistenceFallback(long userId, Throwable t) {
+        if (t instanceof RemoteCallBusinessException be) {
+            throw be;
+        }
+
+        if (t instanceof CallNotPermittedException c) {
+            log.error("Circuit Breaker открыт для user-checker. Причина: {}", t.getMessage());
+            throw c;
+        }
+
+        log.error("user-checker: технический сбой: {}", t.getMessage());
+        throw new RemoteCallTechnicalException("Сервис пользователей временно недоступен");
     }
 
     public void checkUpdatingEventDate(Event event, AdminUpdateEventDto update) {
@@ -92,28 +95,29 @@ public class EventCheckService {
         RemoteCallResult<Boolean> result = requestExistsClientAdapter.checkExistenceByEventIdAndRequesterId(eventId, userId);
 
         return switch (result) {
-            case RemoteCallResult.Success<Boolean> s -> {
-                Boolean isEventMet = s.value();
-
-                if (!isEventMet) {
-                    throw new EventNotMetException(eventId, userId);
-                }
-
-                yield true;
-            }
+            case RemoteCallResult.Success<Boolean> s -> s.value();
             case RemoteCallResult.BusinessFailure<?> bf -> {
                 log.warn("Бизнес-отказ при проверке существования заявки на участие в мероприятии: {}", bf.message());
-                throw new RequestServiceInteractionException("Проверьте корректность передаваемых данных, возникла ошибка при проверке существования заявки на участие в мероприятии: " + bf.message());
+                throw new RemoteCallBusinessException(bf.status(), "Проверьте корректность передаваемых данных, возникла ошибка при проверке существования заявки на участие в мероприятии: " + bf.message());
             }
             case RemoteCallResult.TechnicalFailure<?> tf -> {
                 log.warn("Технический сбой при проверке существования заявки на участие в мероприятии: {}", tf.reason());
-                yield false;
+                throw new RemoteCallTechnicalException("Технический сбой при проверке существования заявки на участие в мероприятии: " + tf.reason());
             }
         };
     }
 
     private boolean checkRequestExistenceFallback(long eventId, long userId, Throwable t) {
-        log.error("Circuit Breaker открыт для request-checker. Возвращаем заглушку. Причина: {}", t.getMessage());
+        if (t instanceof RemoteCallBusinessException be) {
+            throw be;
+        }
+
+        if (t instanceof CallNotPermittedException c) {
+            log.error("Circuit Breaker открыт для request-checker. Возвращаем заглушку. Причина: {}", t.getMessage());
+            return false;
+        }
+
+        log.error("request-checker: технический сбой: {}", t.getMessage());
         return false;
     }
 }

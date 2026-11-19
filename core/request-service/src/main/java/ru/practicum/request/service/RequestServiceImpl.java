@@ -22,6 +22,7 @@ import ru.practicum.request.service.support.RequestCheckService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -50,13 +51,6 @@ public class RequestServiceImpl implements RequestService {
     public ChangedRequestStatusesDto updateRequestStatuses(long userId, long eventId, UpdateRequestStatusDto update) {
         log.trace("Инициировано обновление статусов запросов пользователем с id {} к событию с id {}, изменения - {}", userId, eventId, update);
         EventDto event = fetchService.getEventByIdAndUserId(userId, eventId);
-
-        if (event.state().equals(EventStatus.FALLBACK)) {
-            return ChangedRequestStatusesDto.builder()
-                    .confirmedRequests(List.of())
-                    .rejectedRequests(List.of())
-                    .build();
-        }
 
         //Обработка ситуации, когда не установлено ограничение по количеству участников
         //или запрос не требует модерации
@@ -88,19 +82,18 @@ public class RequestServiceImpl implements RequestService {
 
         EventDto event = fetchService.getEventById(eventId);
         requestCheckService.requestChecks(event, userId);
-        Long userDbId = requestCheckService.checkUserExistence(userId);
+        Set<Long> usersIds = requestCheckService.checkUserExistence(userId);
 
-        RequestStatus status;
-        if (!event.state().equals(EventStatus.FALLBACK)) {
-            status = changeRequestStatus(event);
-        } else {
-            status = RequestStatus.FALLBACK;
+        if (!usersIds.contains(userId)) {
+            throw new NotFoundException(Entities.USER, userId);
         }
+
+        RequestStatus status = changeRequestStatus(event);
 
         Request request = Request.builder()
                 .created(LocalDateTime.now())
                 .eventId(eventId)
-                .requesterId(userDbId)
+                .requesterId(userId)
                 .status(status)
                 .build();
 

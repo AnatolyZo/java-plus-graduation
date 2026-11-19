@@ -24,6 +24,7 @@ import ru.practicum.request.service.support.RequestCheckService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -67,7 +68,7 @@ public class RequestServiceImplTest {
 
         when(fetchService.getEventById(anyLong())).thenReturn(event);
         when(requestRepository.existsByEventIdAndRequesterId(anyLong(), anyLong())).thenReturn(false);
-        when(requestCheckService.checkUserExistence(USER_ID)).thenReturn(USER_ID);
+        when(requestCheckService.checkUserExistence(USER_ID)).thenReturn(Set.of(USER_ID));
         when(requestRepository.save(any(Request.class))).thenReturn(savedRequest);
         when(fetchService.updateConfirmedRequests(anyLong(), any(ConfirmedRequestsUpdate.class))).thenReturn(createdEvent);
         doNothing().when(collectorClient).addRegistration(USER_ID, EVENT_ID);
