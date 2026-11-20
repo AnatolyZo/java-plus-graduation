@@ -24,6 +24,7 @@ import ru.practicum.common.Entities;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -130,7 +131,7 @@ public class CommentServiceTests {
                 .status(CommentStatus.PENDING) // или любой другой, не важно
                 .build();
 
-        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(ADMIN_ID);
+        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(Set.of(ADMIN_ID));
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
 
         CommentDto dto = commentService.moderateComment(ADMIN_ID, COMMENT_ID, ModerationAction.APPROVE);
@@ -160,7 +161,7 @@ public class CommentServiceTests {
                 .status(CommentStatus.PENDING)
                 .build();
 
-        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(ADMIN_ID);
+        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(Set.of(ADMIN_ID));
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
 
         CommentDto dto = commentService.moderateComment(ADMIN_ID, COMMENT_ID, ModerationAction.REJECT);
@@ -175,7 +176,7 @@ public class CommentServiceTests {
 
     @Test
     void moderateComment_throwsNotFound_whenCommentDoesNotExist() {
-        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(ADMIN_ID);
+        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(Set.of(ADMIN_ID));
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.moderateComment(ADMIN_ID, COMMENT_ID, ModerationAction.APPROVE))
@@ -196,7 +197,7 @@ public class CommentServiceTests {
 
     @Test
     void deleteComment_deletesComment_ByAdmin_whenExists() {
-        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(ADMIN_ID);
+        when(commentCheckService.checkUserExistence(ADMIN_ID)).thenReturn(Set.of(ADMIN_ID));
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
 
         commentService.deleteCommentByAdmin(ADMIN_ID, COMMENT_ID);
@@ -307,7 +308,7 @@ public class CommentServiceTests {
                 .build();
 
         List<Comment> comments = List.of(comment1, comment2);
-        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(Set.of(AUTHOR_ID));
         when(commentRepository.findByAuthorId(eq(AUTHOR_ID))).thenReturn(comments);
 
         List<CommentShortDto> result = commentService.getUsersComments(AUTHOR_ID);
@@ -320,7 +321,7 @@ public class CommentServiceTests {
 
     @Test
     void getUsersComments_returnsEmptyList_whenNoComments() {
-        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(Set.of(AUTHOR_ID));
         when(commentRepository.findByAuthorId(eq(AUTHOR_ID))).thenReturn(List.of());
 
         List<CommentShortDto> result = commentService.getUsersComments(AUTHOR_ID);
@@ -333,8 +334,8 @@ public class CommentServiceTests {
         long event = 3L;
 
         NewCommentDto dto = NewCommentDto.builder().text("Новый комментарий").build();
-        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
-        when(commentCheckService.checkEventExistence(EVENT_ID)).thenReturn(EVENT_ID);
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(Set.of(AUTHOR_ID));
+        when(commentCheckService.checkEventExistence(EVENT_ID)).thenReturn(Set.of(EVENT_ID));
 
         Comment savedComment = Comment.builder()
                 .id(1L)
@@ -362,7 +363,7 @@ public class CommentServiceTests {
     @Test
     void updateComment_updatesTextToModeration_andSetsPending_whenOwnComment() {
         UpdateCommentDto dto = UpdateCommentDto.builder().text("Обновленный текст").build();
-        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(Set.of(AUTHOR_ID));
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
 
         Comment savedComment = comment;
@@ -386,7 +387,7 @@ public class CommentServiceTests {
     void updateComment_throwsUnavailableUpdate_whenUserTriesToUpdateOthersComment() {
         UpdateCommentDto dto = UpdateCommentDto.builder().text("Текст").build();
 
-        when(commentCheckService.checkUserExistence(ANOTHER_USER_ID)).thenReturn(ANOTHER_USER_ID);
+        when(commentCheckService.checkUserExistence(ANOTHER_USER_ID)).thenReturn(Set.of(ANOTHER_USER_ID));
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.of(comment));
         doThrow(new UnavailableUpdateException(Entities.COMMENT.name(), COMMENT_ID))
                 .when(commentCheckService)
@@ -402,7 +403,7 @@ public class CommentServiceTests {
     @Test
     void updateComment_throwsNotFound_whenCommentDoesNotExist() {
         UpdateCommentDto dto = UpdateCommentDto.builder().text("Текст").build();
-        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(AUTHOR_ID);
+        when(commentCheckService.checkUserExistence(AUTHOR_ID)).thenReturn(Set.of(AUTHOR_ID));
         when(commentRepository.findById(eq(COMMENT_ID))).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.updateComment(AUTHOR_ID, COMMENT_ID, dto))

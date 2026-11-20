@@ -78,7 +78,7 @@ public class AdminEventControllerTests {
                 .requestModeration(true)
                 .status(EventStatus.PUBLISHED)
                 .title("TitleTitleTitleTitleTitle")
-                .views(42L)
+                .rating(42L)
                 .build();
 
         responseList = List.of(responseEvent);
@@ -176,7 +176,7 @@ public class AdminEventControllerTests {
         Assertions.assertThat(result.getBody()).isNotNull();
         Assertions.assertThat(result.getBody().getId()).isEqualTo(TEST_EVENT_ID);
         Assertions.assertThat(result.getBody().getTitle()).isEqualTo("TitleTitleTitleTitleTitle");
-        Assertions.assertThat(result.getBody().getViews()).isEqualTo(42L);
+        Assertions.assertThat(result.getBody().getRating()).isEqualTo(42L);
     }
 
     @Test
@@ -213,7 +213,7 @@ public class AdminEventControllerTests {
                 .eventDate(LocalDateTime.of(2026, 8, 10, 14, 0, 0))
                 .initiator(1L)
                 .paid(false)
-                .views(10L)
+                .rating(10L)
                 .confirmedRequests(2)
                 .build();
         EventShortDto dto2 = EventShortDto.builder()
@@ -224,7 +224,7 @@ public class AdminEventControllerTests {
                 .eventDate(LocalDateTime.of(2026, 8, 11, 15, 0, 0))
                 .initiator(2L)
                 .paid(true)
-                .views(20L)
+                .rating(20L)
                 .confirmedRequests(5)
                 .build();
         List<EventShortDto> resultList = List.of(dto1, dto2);

@@ -6,6 +6,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.practicum.common.Entities;
+import ru.practicum.explorewithme.CollectorClient;
 import ru.practicum.request.dto.ChangedRequestStatusesDto;
 import ru.practicum.request.dto.RequestDto;
 import ru.practicum.request.dto.RequestStatus;
@@ -23,6 +24,7 @@ import ru.practicum.request.service.support.RequestCheckService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -41,6 +43,9 @@ public class RequestServiceImplTest {
 
     @Mock
     private RequestCheckService requestCheckService;
+
+    @Mock
+    private CollectorClient collectorClient;
 
     @InjectMocks
     private RequestServiceImpl requestService;
@@ -63,9 +68,10 @@ public class RequestServiceImplTest {
 
         when(fetchService.getEventById(anyLong())).thenReturn(event);
         when(requestRepository.existsByEventIdAndRequesterId(anyLong(), anyLong())).thenReturn(false);
-        when(requestCheckService.checkUserExistence(USER_ID)).thenReturn(USER_ID);
+        when(requestCheckService.checkUserExistence(USER_ID)).thenReturn(Set.of(USER_ID));
         when(requestRepository.save(any(Request.class))).thenReturn(savedRequest);
         when(fetchService.updateConfirmedRequests(anyLong(), any(ConfirmedRequestsUpdate.class))).thenReturn(createdEvent);
+        doNothing().when(collectorClient).addRegistration(USER_ID, EVENT_ID);
 
         RequestDto dto = requestService.create(USER_ID, EVENT_ID);
 

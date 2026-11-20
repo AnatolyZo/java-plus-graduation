@@ -1,6 +1,5 @@
 package ru.practicum.event.service.support;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.practicum.event.dto.category.CategoryDto;
 import ru.practicum.event.dto.event.*;
@@ -14,12 +13,10 @@ import ru.practicum.event.mapper.LocationMapper;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 public class EventFactoryService {
-    private final StatsInteractionService statsInteractionService;
-
     public void updateEventFields(Event event, EventUpdateCommon update, EventStatus status) {
         if (update.getAnnotation() != null && !update.getAnnotation().isEmpty()) {
             event.setAnnotation(update.getAnnotation());
@@ -37,10 +34,6 @@ public class EventFactoryService {
 
         if (update.getPaid() != null) {
             event.setPaid(update.getPaid());
-        }
-
-        if (update.getAnnotation() != null && !update.getAnnotation().isEmpty()) {
-            event.setAnnotation(update.getAnnotation());
         }
 
         if (update.getParticipantLimit() != null) {
@@ -109,19 +102,6 @@ public class EventFactoryService {
         event.setLocation(location);
     }
 
-    public List<EventDto> buildEventDtoList(List<Event> events) {
-        return events.stream()
-                .map(event -> {
-                    CategoryDto categoryDto = CategoryMapper.toCategoryDto(event.getCategory());
-                    long initiatorId = event.getInitiatorId();
-                    Location location = LocationMapper.toLocation(event.getLocation());
-                    EventDto eventDto = EventMapper.toEventDto(event);
-                    setNestedClassesValues(eventDto, categoryDto, initiatorId, location);
-                    return eventDto;
-                })
-                .toList();
-    }
-
     public Event buildEvent(NewEventDto newEventDto,
                             Category category,
                             long userId,
@@ -136,25 +116,40 @@ public class EventFactoryService {
         EventDto eventDto = EventMapper.toEventDto(createdEvent);
         CategoryDto categoryDto = CategoryMapper.toCategoryDto(createdEvent.getCategory());
         Location location = LocationMapper.toLocation(createdEvent.getLocation());
-        setNestedClassesValues(eventDto, categoryDto, eventDto.getInitiator(), location);
+        setNestedClassesValues(eventDto, categoryDto, createdEvent.getInitiatorId(), location);
         return eventDto;
     }
 
-    public EventDto buildEventWithStats(Event events) {
-        List<EventDto> eventDtoList = buildEventDtoList(List.of(events));
-        return statsInteractionService.getEventsWithStats(eventDtoList).getFirst();
+    public List<EventDto> buildEventsWithStats(List<Event> events, Map<Long, Double> ratingByEventId) {
+        List<EventDto> eventDtoList = buildEventDtoList(events);
+        addRatingsTo(eventDtoList, ratingByEventId);
+        return eventDtoList;
     }
 
-    public List<EventDto> buildEventsWithStats(List<Event> events) {
-        List<EventDto> eventDtoList = buildEventDtoList(events);
-        return statsInteractionService.getEventsWithStats(eventDtoList);
+    private void addRatingsTo(List<EventDto> eventDtoList, Map<Long, Double> ratingByEventId) {
+        eventDtoList.forEach(eventDto -> {
+            double rating = ratingByEventId.getOrDefault(eventDto.getId(), 0d);
+            eventDto.setRating(rating);
+        });
     }
 
-    public List<EventShortDto> buildEventsShortWithStats(List<Event> events) {
-        List<EventDto> eventDtoList = buildEventDtoList(events);
-        return statsInteractionService.getEventsWithStats(eventDtoList).stream()
+    private List<EventDto> buildEventDtoList(List<Event> events) {
+        return events.stream()
+                .map(event -> {
+                    CategoryDto categoryDto = CategoryMapper.toCategoryDto(event.getCategory());
+                    long initiatorId = event.getInitiatorId();
+                    Location location = LocationMapper.toLocation(event.getLocation());
+                    EventDto eventDto = EventMapper.toEventDto(event);
+                    setNestedClassesValues(eventDto, categoryDto, initiatorId, location);
+                    return eventDto;
+                })
+                .toList();
+    }
+
+    public List<EventShortDto> buildEventsShortWithStats(List<Event> events, Map<Long, Double> ratingByEventId) {
+        return buildEventsWithStats(events, ratingByEventId).stream()
                 .map(EventMapper::toEventShortDto)
-                .sorted(Comparator.comparingLong(EventShortDto::getViews).reversed())
+                .sorted(Comparator.comparingDouble(EventShortDto::getRating).reversed())
                 .toList();
     }
 }

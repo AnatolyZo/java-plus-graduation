@@ -27,6 +27,7 @@ import static ru.practicum.common.ControllerConstants.*;
 public class PublicEventController {
 
     private final EventService eventService;
+    private static final String USER_HEADER = "X-EWM-USER-ID";
 
     @GetMapping
     public ResponseEntity<List<EventShortDto>> getEvents(
@@ -62,13 +63,22 @@ public class PublicEventController {
     }
 
     @GetMapping("/{" + ID_EVENT + "}")
-    public ResponseEntity<EventDto> getEvent(@PathVariable(name = ID_EVENT) long eventId,
-                                             HttpServletRequest request) {
+    public ResponseEntity<EventDto> getEvent(@RequestHeader(USER_HEADER) long userId,
+                                             @PathVariable(name = ID_EVENT) long eventId) {
         return ResponseEntity.status(HttpStatus.OK)
-                .body(eventService.getPublishedEvent(
-                        eventId,
-                        request.getRemoteAddr(),
-                        request.getRequestURI()
-                ));
+                .body(eventService.getPublishedEvent(userId, eventId));
+    }
+
+    @GetMapping(URL_RECOMMENDATIONS)
+    public ResponseEntity<List<EventDto>> getRecommendations(@RequestHeader(USER_HEADER) long userId) {
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(eventService.getRecommendations(userId));
+    }
+
+    @PutMapping("/{" + ID_EVENT + "}" + URL_LIKE)
+    public ResponseEntity<Void> addLike(@RequestHeader(USER_HEADER) long userId,
+                                        @PathVariable(name = ID_EVENT) long eventId) {
+        eventService.addLike(userId, eventId);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -1,14 +1,18 @@
 package ru.practicum.event.exception.handler;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import ru.practicum.event.exception.*;
+import ru.practicum.feign.exception.RemoteCallBusinessException;
+import ru.practicum.feign.exception.RemoteCallTechnicalException;
 
 import java.time.LocalDateTime;
 
@@ -81,6 +85,31 @@ public class ErrorHandler {
     @ExceptionHandler
     public ResponseEntity<ApiError> earlyDate(EarlyDateException e) {
         return createErrorResponse(e.getMessage(), "date is early", HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiError> eventNotMet(EventNotMetException e) {
+        return createErrorResponse(e.getMessage(), "event not met (no registration)", HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiError> missingHeader(MissingRequestHeaderException e) {
+        return createErrorResponse(e.getMessage(), "header is missing", HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiError> businessFailure(RemoteCallBusinessException e) {
+        return createErrorResponse(e.getMessage(), "business failure", HttpStatus.resolve(e.getStatus()));
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiError> technicalFailure(RemoteCallTechnicalException e) {
+        return createErrorResponse(e.getMessage(), "technical failure", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<ApiError> openCircuitBreaker(CallNotPermittedException e) {
+        return createErrorResponse(e.getMessage(), "service is unavailable", HttpStatus.SERVICE_UNAVAILABLE);
     }
 
     private ResponseEntity<ApiError> createErrorResponse(String message, String reason, HttpStatus status) {

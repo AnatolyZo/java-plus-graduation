@@ -30,6 +30,8 @@ resilience4j:
   circuitbreaker:
     configs:
       default:
+        ignore-exceptions:
+          - ru.practicum.feign.exception.RemoteCallBusinessException
         sliding-window-size: 5
         failure-rate-threshold: 50
         wait-duration-in-open-state: 10s
@@ -45,6 +47,19 @@ stats:
 
 server:
   port: 0
+
+grpc:
+  client:
+    analyzer:
+      address: 'discovery:///analyzer'
+      enableKeepAlive: true
+      keepAliveWithoutCalls: true
+      negotiationType: plaintext
+    collector:
+      address: 'discovery:///collector'
+      enableKeepAlive: true
+      keepAliveWithoutCalls: true
+      negotiationType: plaintext
 
 logging:
   level:

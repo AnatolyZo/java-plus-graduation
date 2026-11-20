@@ -22,21 +22,17 @@ import ru.practicum.event.entity.Event;
 import ru.practicum.event.entity.LocationEmbeddable;
 import ru.practicum.event.exception.NotFoundException;
 import ru.practicum.event.exception.UnavailableUpdateException;
-import ru.practicum.event.repository.AdminEventSearchSpecification;
 import ru.practicum.event.repository.CategoryRepository;
 import ru.practicum.event.repository.EventRepository;
 import ru.practicum.event.service.EventServiceImpl;
 import ru.practicum.event.service.support.EventCheckService;
 import ru.practicum.event.service.support.EventFactoryService;
 import ru.practicum.event.service.support.StatsInteractionService;
-import ru.practicum.explorewithme.StatsClient;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
+import static org.assertj.core.api.Assertions.offset;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -64,12 +60,6 @@ class EventServiceImplTests {
 
     @Mock
     private EventFactoryService eventFactoryService;
-
-    @Mock
-    private StatsClient statsClient;
-
-    @Mock
-    private AdminEventSearchSpecification spec;
 
     private static final long USER_ID = 1L;
     private static final long EVENT_ID = 1L;
@@ -113,9 +103,11 @@ class EventServiceImplTests {
 
         EventDto eventDto = EventDto.builder()
                 .id(EVENT_ID)
-                .views(7L)
+                .rating(7d)
                 .build();
-        when(eventFactoryService.buildEventsWithStats(events)).thenReturn(List.of(eventDto));
+        Map<Long, Double> ratingByEventId = Map.of(EVENT_ID, 7d);
+        when(statsInteractionService.getStats(any())).thenReturn(ratingByEventId);
+        when(eventFactoryService.buildEventsWithStats(events, ratingByEventId)).thenReturn(List.of(eventDto));
         when(eventRepository.findByInitiatorId(eq(USER_ID), any(Pageable.class)))
                 .thenReturn(events);
 
@@ -123,10 +115,10 @@ class EventServiceImplTests {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getId()).isEqualTo(event.getId());
-        assertThat(result.get(0).getViews()).isEqualTo(7L);
+        assertThat(result.get(0).getRating()).isEqualTo(7L);
 
         verify(eventRepository).findByInitiatorId(eq(USER_ID), any(Pageable.class));
-        verify(eventFactoryService).buildEventsWithStats(eq(events));
+        verify(eventFactoryService).buildEventsWithStats(eq(events), eq(ratingByEventId));
     }
 
     @Test
@@ -140,7 +132,7 @@ class EventServiceImplTests {
 
         when(categoryRepository.findById(eq(newEventDto.getCategory()))).thenReturn(Optional.of(category));
 
-        when(eventCheckService.checkUserExistence(eq(USER_ID))).thenReturn(USER_ID);
+        when(eventCheckService.checkUserExistence(eq(USER_ID))).thenReturn(Set.of(USER_ID));
 
         when(eventFactoryService.buildEvent(
                 eq(newEventDto),
@@ -166,18 +158,20 @@ class EventServiceImplTests {
     void getEvent_returnsEventDtoWithStats() {
         Event event = createTestEvent(EVENT_ID, USER_ID, CATEGORY_ID, EventStatus.PENDING);
 
-        EventDto baseDto = EventDto.builder().id(EVENT_ID).views(5L).build();
-        when(eventFactoryService.buildEventWithStats(event)).thenReturn(baseDto);
+        EventDto baseDto = EventDto.builder().id(EVENT_ID).rating(5L).build();
+        Map<Long, Double> ratingByEventId = Map.of(EVENT_ID, 5d);
+        when(statsInteractionService.getStats(any())).thenReturn(ratingByEventId);
+        when(eventFactoryService.buildEventsWithStats(List.of(event), ratingByEventId)).thenReturn(List.of(baseDto));
 
         when(eventRepository.findByIdAndInitiatorId(EVENT_ID, USER_ID)).thenReturn(Optional.of(event));
 
         EventDto result = eventService.getEvent(USER_ID, EVENT_ID);
 
         assertThat(result.getId()).isEqualTo(EVENT_ID);
-        assertThat(result.getViews()).isEqualTo(5L);
+        assertThat(result.getRating()).isEqualTo(5L);
 
         verify(eventRepository).findByIdAndInitiatorId(eq(EVENT_ID), eq(USER_ID));
-        verify(eventFactoryService).buildEventWithStats(eq(event));
+        verify(eventFactoryService).buildEventsWithStats(eq(List.of(event)), eq(ratingByEventId));
     }
 
     @Test
@@ -205,16 +199,18 @@ class EventServiceImplTests {
                 .description(existingEvent.getDescription())
                 .paid(existingEvent.isPaid())
                 .status(existingEvent.getStatus())
-                .views(3L)
+                .rating(3L)
                 .build();
-        when(eventFactoryService.buildEventWithStats(eq(existingEvent))).thenReturn(baseDto);
+        Map<Long, Double> ratingByEventId = Map.of(EVENT_ID, 3d);
+        when(statsInteractionService.getStats(any())).thenReturn(ratingByEventId);
+        when(eventFactoryService.buildEventsWithStats(eq(List.of(existingEvent)), eq(ratingByEventId))).thenReturn(List.of(baseDto));
 
         EventDto result = eventService.updateEvent(USER_ID, EVENT_ID, update);
 
         assertThat(result.getTitle()).isEqualTo("Updated Event Title");
         assertThat(result.getDescription()).isEqualTo("Updated detailed description that satisfies the 20–7000 character size constraint.");
         assertThat(result.isPaid()).isEqualTo(true);
-        assertThat(result.getViews()).isEqualTo(3L);
+        assertThat(result.getRating()).isEqualTo(3L);
 
         verify(eventRepository).save(existingEvent);
     }
@@ -251,7 +247,9 @@ class EventServiceImplTests {
         when(eventRepository.save(any())).thenReturn(updatedEvent);
 
         EventDto baseDto = EventDto.builder().id(EVENT_ID).status(EventStatus.CANCELED).build();
-        when(eventFactoryService.buildEventWithStats(updatedEvent)).thenReturn(baseDto);
+        Map<Long, Double> ratingByEventId = Map.of(EVENT_ID, 3d);
+        when(statsInteractionService.getStats(any())).thenReturn(ratingByEventId);
+        when(eventFactoryService.buildEventsWithStats(List.of(updatedEvent), ratingByEventId)).thenReturn(List.of(baseDto));
 
         EventDto result = eventService.updateEvent(USER_ID, EVENT_ID, update);
 
@@ -281,19 +279,20 @@ class EventServiceImplTests {
         EventDto dto1 = EventDto.builder().id(1L).build();
         EventDto dto2 = EventDto.builder().id(2L).build();
         List<EventDto> dtoList = List.of(dto1, dto2);
-        when(eventFactoryService.buildEventDtoList(pageContent)).thenReturn(dtoList);
 
-        EventDto res1 = EventDto.builder().id(1L).views(10L).build();
-        EventDto res2 = EventDto.builder().id(2L).views(20L).build();
-        when(statsInteractionService.getEventsWithStats(dtoList)).thenReturn(List.of(res1, res2));
+        EventDto res1 = EventDto.builder().id(1L).rating(10d).build();
+        EventDto res2 = EventDto.builder().id(2L).rating(20d).build();
+        Map<Long, Double> ratingByEventId = Map.of(1L, 10d, 2L, 20d);
+        when(statsInteractionService.getStats(any())).thenReturn(ratingByEventId);
+        when(eventFactoryService.buildEventsWithStats(pageContent, ratingByEventId)).thenReturn(List.of(res1, res2));
 
         List<EventDto> result = eventService.searchEvents(users, states, categories, rangeStart, rangeEnd, from, size);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getId()).isEqualTo(1L);
         assertThat(result.get(1).getId()).isEqualTo(2L);
-        assertThat(result.get(0).getViews()).isEqualTo(10L);
-        assertThat(result.get(1).getViews()).isEqualTo(20L);
+        assertThat(result.get(0).getRating()).isEqualTo(10L);
+        assertThat(result.get(1).getRating()).isEqualTo(20L);
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(eventRepository).findAll(any(Specification.class), pageableCaptor.capture());
@@ -342,15 +341,17 @@ class EventServiceImplTests {
                 .status(event.getStatus())
                 .participantLimit(event.getParticipantLimit())
                 .confirmedRequests(event.getConfirmedRequests())
-                .views(42L)
+                .rating(42d)
                 .build();
-        when(eventFactoryService.buildEventWithStats(eq(event))).thenReturn(baseDto);
+        Map<Long, Double> ratingByEventId = Map.of(1L, 42d);
+        when(statsInteractionService.getStats(any())).thenReturn(ratingByEventId);
+        when(eventFactoryService.buildEventsWithStats(eq(List.of(event)), eq(ratingByEventId))).thenReturn(List.of(baseDto));
 
         EventDto result = eventService.updateEvent(eventId, body);
 
         assertThat(result.getId()).isEqualTo(eventId);
         assertThat(result.getStatus()).isEqualTo(EventStatus.PUBLISHED);
-        assertThat(result.getViews()).isEqualTo(42L);
+        assertThat(result.getRating()).isEqualTo(42L);
 
         verify(eventRepository).save(event);
         verifyNoMoreInteractions(eventRepository);
@@ -399,7 +400,9 @@ class EventServiceImplTests {
                 .id(event.getId())
                 .status(event.getStatus())
                 .build();
-        when(eventFactoryService.buildEventWithStats(eq(event))).thenReturn(baseDto);
+        Map<Long, Double> ratingByEventId = Map.of(1L, 42d);
+        when(statsInteractionService.getStats(any())).thenReturn(ratingByEventId);
+        when(eventFactoryService.buildEventsWithStats(eq(List.of(event)), eq(ratingByEventId))).thenReturn(List.of(baseDto));
 
         EventDto result = eventService.updateEvent(eventId, body);
 
@@ -413,23 +416,22 @@ class EventServiceImplTests {
         List<Event> events = List.of(first, second);
 
         doNothing().when(eventCheckService).checkDateRange(any(), any());
-        doNothing().when(statsInteractionService).saveHit(any(), any());
         when(eventRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(new PageImpl<>(events));
 
         EventShortDto dto1 = EventShortDto.builder()
                 .id(1L)
-                .views(11L)
+                .rating(11L)
                 .build();
 
 
         EventShortDto dto2 = EventShortDto.builder()
                 .id(2L)
-                .views(22L)
+                .rating(22L)
                 .build();
 
         List<EventShortDto> expectedDtos = List.of(dto1, dto2);
 
-        when(eventFactoryService.buildEventsShortWithStats(any()))
+        when(eventFactoryService.buildEventsShortWithStats(any(), any()))
                 .thenReturn(expectedDtos);
 
         List<EventShortDto> result = eventService.getPublishedEvents(
@@ -448,9 +450,9 @@ class EventServiceImplTests {
 
         Assertions.assertThat(result).hasSize(2);
         Assertions.assertThat(result.get(0).getId()).isEqualTo(1L);
-        Assertions.assertThat(result.get(0).getViews()).isEqualTo(11L);
+        Assertions.assertThat(result.get(0).getRating()).isEqualTo(11L);
         Assertions.assertThat(result.get(1).getId()).isEqualTo(2L);
-        Assertions.assertThat(result.get(1).getViews()).isEqualTo(22L);
+        Assertions.assertThat(result.get(1).getRating()).isEqualTo(22L);
     }
 
     @Test
@@ -465,7 +467,7 @@ class EventServiceImplTests {
         );
 
         Assertions.assertThat(result).isEmpty();
-        verify(statsInteractionService, never()).getEventsWithStats(anyList());
+        verify(statsInteractionService, never()).getStats(anyList());
     }
 
     @Test
@@ -478,15 +480,17 @@ class EventServiceImplTests {
                 .title(event.getTitle())
                 .category(CategoryDto.builder().id(CATEGORY_ID).build())
                 .status(EventStatus.PUBLISHED)
-                .views(33L)
+                .rating(33d)
                 .build();
 
-        when(eventFactoryService.buildEventWithStats(eq(event))).thenReturn(baseDto);
+        Map<Long, Double> ratingByEventId = Map.of(1L, 33d);
+        when(statsInteractionService.getStats(any())).thenReturn(ratingByEventId);
+        when(eventFactoryService.buildEventsWithStats(eq(List.of(event)), eq(ratingByEventId))).thenReturn(List.of(baseDto));
 
-        EventDto result = eventService.getPublishedEvent(3L, IP, "/events/3");
+        EventDto result = eventService.getPublishedEvent(3L, 3L);
 
         Assertions.assertThat(result.getId()).isEqualTo(3L);
-        Assertions.assertThat(result.getViews()).isEqualTo(33L);
+        Assertions.assertThat(result.getRating()).isEqualTo(33L);
         Assertions.assertThat(result.getCategory().getId()).isEqualTo(CATEGORY_ID);
     }
 
@@ -608,19 +612,21 @@ class EventServiceImplTests {
 
         when(eventRepository.findByIdIn(ids)).thenReturn(events);
 
-        EventDto dto1 = EventDto.builder().id(1L).status(EventStatus.PUBLISHED).views(10L).build();
-        EventDto dto2 = EventDto.builder().id(2L).status(EventStatus.PUBLISHED).views(20L).build();
+        EventDto dto1 = EventDto.builder().id(1L).status(EventStatus.PUBLISHED).rating(10d).build();
+        EventDto dto2 = EventDto.builder().id(2L).status(EventStatus.PUBLISHED).rating(20d).build();
         List<EventDto> baseDtos = List.of(dto1, dto2);
 
-        when(eventFactoryService.buildEventsWithStats(eq(events))).thenReturn(baseDtos);
+        Map<Long, Double> ratingByEventId = Map.of(1L, 10d, 2L, 20d);
+        when(statsInteractionService.getStats(any())).thenReturn(ratingByEventId);
+        when(eventFactoryService.buildEventsWithStats(eq(events), eq(ratingByEventId))).thenReturn(baseDtos);
 
         List<EventShortDto> result = eventService.getEventShortDtos(ids);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getId()).isEqualTo(1L);
-        assertThat(result.get(0).getViews()).isEqualTo(10L);
+        assertThat(result.get(0).getRating()).isEqualTo(10L);
         assertThat(result.get(1).getId()).isEqualTo(2L);
-        assertThat(result.get(1).getViews()).isEqualTo(20L);
+        assertThat(result.get(1).getRating()).isEqualTo(20L);
 
         verify(eventRepository).findByIdIn(ids);
     }
@@ -635,7 +641,50 @@ class EventServiceImplTests {
 
         assertThat(result).isEmpty();
         verify(eventRepository).findByIdIn(ids);
-        verifyNoMoreInteractions(statsClient);
+    }
+
+    @Test
+    void getRecommendations_returnsDtosWithRecommendedEvents() {
+        Map<Long, Double> recommendations = Map.of(1L, 4.5, 2L, 3.2);
+        when(statsInteractionService.getRecommendations(USER_ID)).thenReturn(recommendations);
+
+        Event e1 = createTestEvent(1L, USER_ID, CATEGORY_ID, EventStatus.PUBLISHED);
+        Event e2 = createTestEvent(2L, USER_ID + 1, CATEGORY_ID, EventStatus.PUBLISHED);
+        List<Event> events = List.of(e1, e2);
+
+        when(eventRepository.findByIdIn(argThat(ids ->
+                ids != null && ids.size() == 2 && ids.containsAll(List.of(1L, 2L)))))
+                .thenReturn(events);
+
+        EventDto dto1 = EventDto.builder().id(1L).rating(4.5).build();
+        EventDto dto2 = EventDto.builder().id(2L).rating(3.2).build();
+        when(eventFactoryService.buildEventsWithStats(events, recommendations))
+                .thenReturn(List.of(dto1, dto2));
+
+        List<EventDto> result = eventService.getRecommendations(USER_ID);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getId()).isEqualTo(1L);
+        assertThat(result.get(0).getRating()).isEqualTo(4.5, offset(1e-9));
+        assertThat(result.get(1).getId()).isEqualTo(2L);
+        assertThat(result.get(1).getRating()).isEqualTo(3.2, offset(1e-9));
+
+        ArgumentCaptor<List<Long>> idsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(eventRepository).findByIdIn(idsCaptor.capture());
+        assertThat(idsCaptor.getValue()).containsExactlyInAnyOrder(1L, 2L);
+
+        verify(eventFactoryService).buildEventsWithStats(eq(events), eq(recommendations));
+    }
+
+    @Test
+    void getRecommendations_noRecommendations_returnsEmptyList() {
+        when(statsInteractionService.getRecommendations(USER_ID)).thenReturn(Map.of());
+
+        List<EventDto> result = eventService.getRecommendations(USER_ID);
+
+        assertThat(result).isEmpty();
+        verify(eventRepository, never()).findByIdIn(anyList());
+        verify(eventFactoryService, never()).buildEventsWithStats(anyList(), anyMap());
     }
 
     private Event createEvent(long id, String title, EventStatus status, int confirmedRequests) {
@@ -685,20 +734,6 @@ class EventServiceImplTests {
         return Category.builder()
                 .id(categoryId)
                 .name("Test Category")
-                .build();
-    }
-
-    private NewEventDto createTestNewEventDto(Long categoryId, LocalDateTime time) {
-        return NewEventDto.builder()
-                .annotation("Test annotation for event creation. It must be at least 20 characters long, so we are adding some extra text here to meet the requirement.")
-                .category(categoryId)
-                .description("Detailed description of the event. Validation requires minimum 20 characters, so this sentence is intentionally long enough to pass the Size constraint.")
-                .eventDate(time)
-                .location(new Location(55.7558, 37.6176))
-                .paid(false)
-                .participantLimit(10)
-                .requestModeration(true)
-                .title("Test Event Title")
                 .build();
     }
 
